@@ -19,10 +19,10 @@ type Proc struct {
 	Prog   Program
 }
 
-type ProcStatus uint8
+type ProcStatus int32
 
 const (
-	ProcStopped ProcStatus = iota
+	ProcStopped ProcStatus = 1 << iota
 	ProcStopping
 	ProcStarting
 	ProcRunning
@@ -134,6 +134,23 @@ func isContainBackoff(procs []*Proc) bool {
 		}
 	}
 	return false
+}
+
+func checkStatus(procs []Proc, status ProcStatus, req CmdArg) bool {
+
+	for _, ps := range procs {
+		if req.Gname == "" || ps.Gname == req.Gname {
+			if req.Pname == "" || ps.Pname == req.Pname {
+				if req.Id < 0 || int(ps.Id) == req.Id {
+					if (ps.Status & status) == 0 {
+						return false
+					}
+				}
+			}
+		}
+	}
+
+	return true
 }
 
 func isAllProcDead(procs []Proc) bool {
