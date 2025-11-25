@@ -20,5 +20,5 @@ cluster:
           - SHELL: /bin/sh
           - HOME: /root
         umask: 022
-        stdout: /tmp/programname_stdout.log
-        stderr: /tmp/programname_stdout.log
+        stdout: /tmp/programname_stdout(%d).log
+        stderr: /tmp/programname_stderr(%d).log
