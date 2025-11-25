@@ -226,6 +226,21 @@ func (c *controller) startProc(ps *Proc) error {
 	return nil
 }
 
+// stop proc
+func (c *controller) stopByCmd(arg CmdArg) error {
+	if isGeneralCmd(arg) {
+		return c.stopAllProcs()
+	} else if isGroupCmd(arg) {
+		return c.stopGroupProcs(arg.Gname)
+	} else if isProgCmd(arg) {
+		return c.stopProgProcs(arg.Gname, arg.Pname)
+	} else if isProcCmd(arg) {
+		return c.stopIDProc(arg.Gname, arg.Pname, uint8(arg.Id))
+	}
+
+	return fmt.Errorf("can't find command args type")
+}
+
 func (c *controller) stopAllProcs() error {
 	if isContainBackoff(c.procs) {
 		return fmt.Errorf("the procs contains a backoff process")
@@ -329,6 +344,8 @@ func (c *controller) handleCmd(psch procCmd) {
 		psch.resp <- c.startAutoProcs()
 	case procStart:
 		psch.resp <- c.startByCmd(psch.arg)
+	case procStop:
+		psch.resp <- c.stopByCmd(psch.arg)
 	case procGetStatus:
 		psch.resp <- nil
 	case procShutDown:
