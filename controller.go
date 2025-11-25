@@ -78,6 +78,8 @@ func (c *controller) SendCmd(cmd procCmd) error {
 	}
 }
 
+// Possibly hanging if one of receivers is either not ready to receive,
+// its channel is full, or exiting without calling Unsubscribe.
 func (c *controller) publish() {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
@@ -89,53 +91,60 @@ func (c *controller) publish() {
 }
 
 // start proc
-// TODO add error handling
 func (c *controller) startAutoProcs() error {
 	for _, ps := range c.procs {
 		if !isStartable(ps.Status) || !ps.Prog.Autostart {
 			continue
 		}
-		c.startProc(ps)
+		err := c.startProc(ps)
+		if err != nil {
+			return err
+		}
 	}
 	return nil
 }
 
-// TODO add error handling
 func (c *controller) startAllProcs() error {
 	for _, ps := range c.procs {
 		if !isStartable(ps.Status) {
 			continue
 		}
-		c.startProc(ps)
+		err := c.startProc(ps)
+		if err != nil {
+			return err
+		}
 	}
 	return nil
 }
 
-// TODO add error handling
 func (c *controller) startGroupProcs(gname string) error {
 	procs := getGroupProcs(c.procs, gname)
 	for _, ps := range procs {
 		if !isStartable(ps.Status) {
 			continue
 		}
-		c.startProc(ps)
+		err := c.startProc(ps)
+		if err != nil {
+			return err
+		}
 	}
 	return nil
 }
 
-// TODO add error handling
 func (c *controller) startProgProcs(gname, pname string) error {
 	procs := getProgProcs(c.procs, gname, pname)
 	for _, ps := range procs {
 		if !isStartable(ps.Status) {
 			continue
 		}
-		c.startProc(ps)
+		err := c.startProc(ps)
+		if err != nil {
+			return err
+		}
 	}
 	return nil
 }
 
-// TODO add error handling
 func (c *controller) startIDProc(gname, pname string, id uint8) error {
 	ps := getIDProc(c.procs, gname, pname, id)
 	if ps == nil {
@@ -144,8 +153,7 @@ func (c *controller) startIDProc(gname, pname string, id uint8) error {
 	if !isStartable(ps.Status) {
 		return fmt.Errorf("the process is not startable")
 	}
-	c.startProc(ps)
-	return nil
+	return c.startProc(ps)
 }
 
 func (c *controller) startProc(ps *Proc) error {
@@ -175,6 +183,7 @@ func (c *controller) startProc(ps *Proc) error {
 
 	proc, err := os.StartProcess(ps.Prog.Cmd[0], ps.Prog.Cmd, attr)
 	if err != nil {
+		slog.Error("startProc: error occured in os.StartProcess()", "error", err.Error())
 		return err
 	}
 
@@ -203,7 +212,6 @@ func (c *controller) startProc(ps *Proc) error {
 	return nil
 }
 
-// stop proc
 func (c *controller) stopAllProcs() error {
 	if isContainBackoff(c.procs) {
 		return fmt.Errorf("the procs contains a backoff process")
@@ -212,7 +220,10 @@ func (c *controller) stopAllProcs() error {
 		if !isStoppable(ps.Status) {
 			continue
 		}
-		c.stopProc(ps)
+		err := c.stopProc(ps)
+		if err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -226,7 +237,10 @@ func (c *controller) stopGroupProcs(gname string) error {
 		if !isStoppable(ps.Status) {
 			continue
 		}
-		c.stopProc(ps)
+		err := c.stopProc(ps)
+		if err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -240,7 +254,10 @@ func (c *controller) stopProgProcs(gname, pname string) error {
 		if !isStoppable(ps.Status) {
 			continue
 		}
-		c.stopProc(ps)
+		err := c.stopProc(ps)
+		if err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -250,8 +267,7 @@ func (c *controller) stopIDProc(gname, pname string, id uint8) error {
 	if !isStoppable(ps.Status) {
 		return fmt.Errorf("the process is not stoppable")
 	}
-	c.stopProc(ps)
-	return nil
+	return c.stopProc(ps)
 }
 
 func (c *controller) stopProc(ps *Proc) error {
@@ -290,6 +306,8 @@ func (c *controller) loop() {
 	}
 }
 
+// Possibly hanging if psch.resp is either not ready to receive,
+// its channel is full, or exiting without calling Unsubscribe.
 func (c *controller) handleCmd(psch procCmd) {
 	switch psch.cmd {
 	case procStartUp:
