@@ -1,0 +1,24 @@
+cluster:
+  groupname:
+    priority: 1
+    programs:
+      programname:
+        cmd: ["/usr/bin/tail", "-f", "/var/log/dnf5.log"]
+        numproc: 2
+        priority: 1
+        directory: /tmp
+        autostart: 'Yes'
+        autorestart: always
+        startsecs: 2
+        startretries: 5
+        stopwaitsecs: 15
+        stopasgroup: 'No'
+        exitcodes:
+          - 0
+        stopsignal: TERM
+        environment:
+          - SHELL: /bin/sh
+          - HOME: /root
+        umask: 022
+        stdout: /tmp/programname_stdout.log
+        stderr: /tmp/programname_stdout.log
