@@ -58,6 +58,7 @@ const (
 	procStartUp cmd = iota
 	procGetStatus
 	procStart
+	procStop
 	procShutDown
 	procExit
 	procStartCheck
@@ -100,6 +101,41 @@ func (t *TaskCmd) Start(req *CmdArg, resp *[]Proc) error {
 		case <-ctx.Done():
 			slog.Warn("TaskCmd.Start: Timeout: fail to start processes")
 			return fmt.Errorf("TaskCmd.Start: Timeout: fail to start processes")
+		}
+	}
+
+	return nil
+
+}
+
+func (t *TaskCmd) Stop(req *CmdArg, resp *[]Proc) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	procsCh := make(chan []Proc, 1)
+	errCh := make(chan error)
+
+	t.c.Subscribe(procsCh)
+	defer t.c.Unsubscribe(procsCh)
+
+	err := t.c.SendCmd(procCmd{cmd: procStop, resp: errCh, arg: *req})
+	if err != nil {
+		return err
+	}
+
+	for {
+		select {
+		case err := <-errCh:
+			if err != nil {
+				return err
+			}
+		case *resp = <-procsCh:
+			if checkStatus(*resp, ProcStopping|ProcStopped|ProcExited|ProcFatal, *req) {
+				return nil
+			}
+		case <-ctx.Done():
+			slog.Warn("TaskCmd.Stop: Timeout: fail to stopping processes")
+			return fmt.Errorf("TaskCmd.Stop: Timeout: fail to stopping processes")
 		}
 	}
 
