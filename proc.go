@@ -1,9 +1,9 @@
 package taskmaster
 
 import (
-	"time"
-	"strings"
 	"strconv"
+	"strings"
+	"time"
 )
 
 type Proc struct {

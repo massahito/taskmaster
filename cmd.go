@@ -38,6 +38,7 @@ const (
 type procCmd struct {
 	pid   int
 	cmd   cmd
+	arg   CmdArg
 	state os.ProcessState
 	resp  chan<- error
 }
@@ -47,8 +48,9 @@ func (t *TaskCmd) Return(req *int, resp *int) error {
 	return nil
 }
 
-// TODO set timeout
 func (t *TaskCmd) Status(req *CmdArg, resp *[]Proc) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
 
 	procsCh := make(chan []Proc, 1)
 	errCh := make(chan error)
@@ -56,7 +58,7 @@ func (t *TaskCmd) Status(req *CmdArg, resp *[]Proc) error {
 	t.c.Subscribe(procsCh)
 	defer t.c.Unsubscribe(procsCh)
 
-	err := t.c.SendCmd(procCmd{cmd: procGetStatus, resp: errCh})
+	err := t.c.SendCmd(procCmd{cmd: procGetStatus, resp: errCh, arg: *req})
 	if err != nil {
 		return err
 	}
@@ -69,6 +71,9 @@ func (t *TaskCmd) Status(req *CmdArg, resp *[]Proc) error {
 			}
 		case *resp = <-procsCh:
 			return nil
+		case <-ctx.Done():
+			slog.Warn("TaskCmd.Status: Timeout: fail to get Status")
+			return fmt.Errorf("TaskCmd.Status: Timeout: fail to get Status")
 		}
 	}
 
@@ -85,7 +90,7 @@ func (t *TaskCmd) Shutdown(req *CmdArg, resp *[]Proc) error {
 	t.c.Subscribe(procsCh)
 	defer t.c.Unsubscribe(procsCh)
 
-	err := t.c.SendCmd(procCmd{cmd: procShutDown, resp: errCh})
+	err := t.c.SendCmd(procCmd{cmd: procShutDown, resp: errCh, arg: *req})
 	if err != nil {
 		return err
 	}
