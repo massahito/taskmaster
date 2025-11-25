@@ -181,13 +181,13 @@ func (c *controller) startProc(ps *Proc) error {
 	if ps.Prog.Stdout == "" {
 		defer rStdout.Close()
 	} else {
-		go stdLog(ps.Prog.Stdout, rStdout)
+		go stdLog(ps.Stdout, rStdout)
 	}
 
 	if ps.Prog.Stderr == "" {
 		defer rStderr.Close()
 	} else {
-		go stdLog(ps.Prog.Stderr, rStderr)
+		go stdLog(ps.Stderr, rStderr)
 	}
 
 	go reapProc(c.ctx, proc, c.cmdCh)

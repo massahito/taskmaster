@@ -1,6 +1,10 @@
 package taskmaster
 
-import "time"
+import (
+	"time"
+	"strings"
+	"strconv"
+)
 
 type Proc struct {
 	Pid    int
@@ -8,6 +12,8 @@ type Proc struct {
 	Gname  string
 	Pname  string
 	Id     uint8
+	Stdout string
+	Stderr string
 	Status ProcStatus
 	Time   time.Time
 	Prog   Program
@@ -34,13 +40,24 @@ func copyProcs(procs []*Proc) []Proc {
 	return ret
 }
 
+func replaceUint(str, key string, n uint8) string {
+	rep := strconv.FormatUint(uint64(n), 10)
+	return strings.Replace(str, key, rep, -1)
+}
+
 func genProcs(groups map[string]Group) []*Proc {
 
 	procs := []*Proc{}
 
 	for gname, group := range groups {
 		for pname, prog := range group.Progs {
+			Stdout := prog.Stdout
+			Stderr := prog.Stderr
 			for i := uint8(0); i < prog.Numproc; i++ {
+				if prog.Numproc != 1 {
+					Stdout = replaceUint(prog.Stdout, "(%d)", i)
+					Stderr = replaceUint(prog.Stderr, "(%d)", i)
+				}
 				p := &Proc{
 					Pid:    0,
 					Retry:  0,
@@ -49,6 +66,8 @@ func genProcs(groups map[string]Group) []*Proc {
 					Id:     i,
 					Status: ProcStopped,
 					Prog:   prog,
+					Stdout: Stdout,
+					Stderr: Stderr,
 				}
 				procs = append(procs, p)
 			}

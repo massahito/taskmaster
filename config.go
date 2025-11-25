@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"gopkg.in/yaml.v3"
 	"os"
+	"strings"
 	"syscall"
 	"time"
 )
@@ -158,6 +159,13 @@ func parseProgram(prog YamlProgram) (Program, error) {
 	if err != nil {
 		return Program{}, err
 	}
+	if prog.Numproc != 1 && strings.Count(prog.Stdout, "(%d)") != 1 {
+		return Program{}, configError("program more than 1 process must have one '(%%d)' in stdout")
+	}
+	if prog.Numproc != 1 && strings.Count(prog.Stderr, "(%d)") != 1 {
+		return Program{}, configError("program more than 1 process must have one '(%%d)' in stderr")
+	}
+
 	env := parseEnv(prog.Environment)
 
 	p := Program{
