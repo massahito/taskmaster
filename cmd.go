@@ -9,12 +9,14 @@ import (
 )
 
 type TaskCmd struct {
-	c *controller
+	c   *controller
+	pid int
 }
 
 func NewTaskCmd(c *controller) *TaskCmd {
 	return &TaskCmd{
-		c: c,
+		c:   c,
+		pid: os.Getpid(),
 	}
 }
 
@@ -71,6 +73,11 @@ type procCmd struct {
 	arg   CmdArg
 	state os.ProcessState
 	resp  chan<- error
+}
+
+func (t *TaskCmd) Pid(_ *CmdArg, pid *int) error {
+	*pid = t.pid
+	return nil
 }
 
 func (t *TaskCmd) Start(req *CmdArg, resp *[]Proc) error {
