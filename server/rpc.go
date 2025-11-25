@@ -12,24 +12,16 @@ import (
 )
 
 type server struct {
-	t      *t.TaskCmd
-	path   string
-	s      *http.Server
-	cancel context.CancelFunc
+	t    *t.TaskCmd
+	path string
+	s    *http.Server
 }
 
 func NewServer(path string, taskCmd *t.TaskCmd) *server {
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-
 	return &server{
 		path: path,
 		t:    taskCmd,
-		s: &http.Server{
-			BaseContext: func(l net.Listener) context.Context {
-				return ctx
-			},
-		},
-		cancel: cancel,
+		s:    &http.Server{},
 	}
 }
 
@@ -41,9 +33,8 @@ func (s *server) Serve() error {
 		return err
 	}
 
-	rpc.DefaultServer = rpc.NewServer()
-	rpc.DefaultServer.Register(s.t)
-	rpc.DefaultServer.HandleHTTP(rpc.DefaultRPCPath, rpc.DefaultDebugPath)
+	rpc.Register(s.t)
+	rpc.HandleHTTP()
 
 	return s.s.Serve(l)
 }
@@ -53,6 +44,5 @@ func (s *server) Shutdown() error {
 	defer cancel()
 
 	err := s.s.Shutdown(ctx)
-	s.cancel()
 	return err
 }
