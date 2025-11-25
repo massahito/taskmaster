@@ -91,6 +91,20 @@ func (c *controller) publish() {
 }
 
 // start proc
+func (c *controller) startByCmd(arg CmdArg) error {
+	if isGeneralCmd(arg) {
+		return c.startAllProcs()
+	} else if isGroupCmd(arg) {
+		return c.startGroupProcs(arg.Gname)
+	} else if isProgCmd(arg) {
+		return c.startProgProcs(arg.Gname, arg.Pname)
+	} else if isProcCmd(arg) {
+		return c.startIDProc(arg.Gname, arg.Pname, uint8(arg.Id))
+	}
+
+	return fmt.Errorf("can't find command args type")
+}
+
 func (c *controller) startAutoProcs() error {
 	for _, ps := range c.procs {
 		if !isStartable(ps.Status) || !ps.Prog.Autostart {
@@ -297,6 +311,7 @@ func (c *controller) loop() {
 
 	for {
 		if c.status == ctrlStopped && isAllProcDead(copyProcs(c.procs)) {
+			slog.Info("shutdown controller complete")
 			return
 		}
 
@@ -312,9 +327,12 @@ func (c *controller) handleCmd(psch procCmd) {
 	switch psch.cmd {
 	case procStartUp:
 		psch.resp <- c.startAutoProcs()
+	case procStart:
+		psch.resp <- c.startByCmd(psch.arg)
 	case procGetStatus:
 		psch.resp <- nil
 	case procShutDown:
+		slog.Info("receive shutdown command")
 		c.status = ctrlStopped
 		psch.resp <- c.stopAllProcs()
 	case procExit:

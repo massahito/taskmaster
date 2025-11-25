@@ -21,14 +21,43 @@ func NewTaskCmd(c *controller) *TaskCmd {
 type CmdArg struct {
 	Gname string
 	Pname string
-	Id    uint8
+	Id    int
 }
 
-type cmd uint8
+func isGeneralCmd(arg CmdArg) bool {
+	if arg.Gname == "" && arg.Pname == "" && arg.Id < 0 {
+		return true
+	}
+	return false
+}
+
+func isGroupCmd(arg CmdArg) bool {
+	if arg.Gname != "" && arg.Pname == "" && arg.Id < 0 {
+		return true
+	}
+	return false
+}
+
+func isProgCmd(arg CmdArg) bool {
+	if arg.Gname != "" && arg.Pname != "" && arg.Id < 0 {
+		return true
+	}
+	return false
+}
+
+func isProcCmd(arg CmdArg) bool {
+	if arg.Gname != "" && arg.Pname != "" && 0 <= arg.Id {
+		return true
+	}
+	return false
+}
+
+type cmd uint32
 
 const (
 	procStartUp cmd = iota
 	procGetStatus
+	procStart
 	procShutDown
 	procExit
 	procStartCheck
@@ -43,9 +72,39 @@ type procCmd struct {
 	resp  chan<- error
 }
 
-func (t *TaskCmd) Return(req *int, resp *int) error {
-	*resp = *req
+func (t *TaskCmd) Start(req *CmdArg, resp *[]Proc) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	procsCh := make(chan []Proc, 1)
+	errCh := make(chan error)
+
+	t.c.Subscribe(procsCh)
+	defer t.c.Unsubscribe(procsCh)
+
+	err := t.c.SendCmd(procCmd{cmd: procStart, resp: errCh, arg: *req})
+	if err != nil {
+		return err
+	}
+
+	for {
+		select {
+		case err := <-errCh:
+			if err != nil {
+				return err
+			}
+		case *resp = <-procsCh:
+			if checkStatus(*resp, ProcStarting|ProcRunning, *req) {
+				return nil
+			}
+		case <-ctx.Done():
+			slog.Warn("TaskCmd.Start: Timeout: fail to start processes")
+			return fmt.Errorf("TaskCmd.Start: Timeout: fail to start processes")
+		}
+	}
+
 	return nil
+
 }
 
 func (t *TaskCmd) Status(req *CmdArg, resp *[]Proc) error {
