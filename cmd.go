@@ -150,6 +150,16 @@ func (t *TaskCmd) Stop(req *CmdArg, resp *[]Proc) error {
 
 }
 
+func (t *TaskCmd) Restart(req *CmdArg, resp *[]Proc) error {
+
+	err := t.Stop(req, resp)
+	if err != nil {
+		return err
+	}
+
+	return t.Start(req, resp)
+}
+
 func (t *TaskCmd) Status(req *CmdArg, resp *[]Proc) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
