@@ -13,30 +13,34 @@ import (
 
 type server struct {
 	t    *t.TaskCmd
-	path string
 	s    *http.Server
+	l    net.Listener
+	path string
 }
 
-func NewServer(path string, taskCmd *t.TaskCmd) *server {
+func NewServer(path string, taskCmd *t.TaskCmd) (*server, error) {
+	l, err := net.Listen("unix", path)
+	if err != nil {
+		slog.Error("NewServer:", "error", err.Error())
+		return nil, err
+	}
+
+	http.DefaultServeMux = http.NewServeMux()
+
 	return &server{
-		path: path,
 		t:    taskCmd,
 		s:    &http.Server{},
-	}
+		l:    l,
+		path: path,
+	}, nil
 }
 
 func (s *server) Serve() error {
 
-	l, err := net.Listen("unix", s.path)
-	if err != nil {
-		slog.Error("listen error", "error", err.Error())
-		return err
-	}
-
-	rpc.Register(s.t)
 	rpc.HandleHTTP()
+	rpc.Register(s.t)
 
-	return s.s.Serve(l)
+	return s.s.Serve(s.l)
 }
 
 func (s *server) Shutdown() error {
