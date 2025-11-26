@@ -54,8 +54,10 @@ func genProcs(groups map[string]Group) []*Proc {
 			Stdout := prog.Stdout
 			Stderr := prog.Stderr
 			for i := uint8(0); i < prog.Numproc; i++ {
-				if prog.Numproc != 1 {
+				if prog.Numproc != 1 && prog.Stdout != "" {
 					Stdout = replaceUint(prog.Stdout, "(%d)", i)
+				}
+				if prog.Numproc != 1 && prog.Stderr != "" {
 					Stderr = replaceUint(prog.Stderr, "(%d)", i)
 				}
 				p := &Proc{
