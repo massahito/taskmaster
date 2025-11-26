@@ -49,7 +49,12 @@ The set of method TaskClient should call is in [cmd.go](https://github.com/massa
 
 `serv-command` may use [CmdArg](https://github.com/massahito/taskmaster/blob/1da2d4ba1dbc4b022f1455c8a57663df02b4a355/cmd.go#L23-L27) for specifying the command scope.
 
-`CmdArg` should be set: - `Gname` and `Pname` are empty string, and `Id` is negative for "all" scope. - `Gname` is set, `Pname` are empty string, and `Id` is negative for `Group` scope. - `Gname` and `Pname` are set, and `Id` is negative for `Program` scope. - `Gname` and `Pname` are set, and `Id` is non-negative for `Process` scope.
+`CmdArg` should be set:
+
+- `Gname` and `Pname` are empty string, and `Id` is negative for "all" scope. 
+- `Gname` is set, `Pname` are empty string, and `Id` is negative for `Group` scope. 
+- `Gname` and `Pname` are set, and `Id` is negative for `Program` scope. 
+- `Gname` and `Pname` are set, and `Id` is non-negative for `Process` scope.
 
 - status
 
@@ -71,7 +76,7 @@ The set of method TaskClient should call is in [cmd.go](https://github.com/massa
 
 - restart
 
-  - must call TaskCmd.Restart(TBA).
+  - must call [TaskCmd.Restart](https://github.com/massahito/taskmaster/blob/4c3465b7b7d11cdbe2bd82f2302ccc0e707b8152/cmd.go#L153).
   - CmdArg must be set properly.
   - must output scoped process's status.
 
