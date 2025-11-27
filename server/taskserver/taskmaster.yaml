@@ -1,3 +1,6 @@
+socket:
+  path: "/tmp/taskmaster.sock"
+ 
 cluster:
   groupname:
     priority: 1

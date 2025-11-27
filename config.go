@@ -11,6 +11,11 @@ import (
 
 type YamlConfig struct {
 	Cluster map[string]YamlGroup `yaml:"cluster"`
+	Socket  YamlSocket           `yaml:"socket"`
+}
+
+type YamlSocket struct {
+	Path string `yaml:"path"`
 }
 
 type YamlGroup struct {
@@ -94,15 +99,29 @@ func Parse(path string) (Config, error) {
 }
 
 func parseConfig(cfg YamlConfig) (Config, error) {
+	socket, err := parseSocket(cfg.Socket)
+	if err != nil {
+		return Config{}, err
+	}
+
 	cluster, err := parseCluster(cfg.Cluster)
 	if err != nil {
 		return Config{}, err
 	}
 
 	return Config{
-		Socket:  Socket{Path: "/tmp/taskmaster.sock"},
+		Socket:  socket,
 		Cluster: cluster,
 		Logging: Logging{Path: "/tmp/taskmaster.log"},
+	}, nil
+}
+
+func parseSocket(skt YamlSocket) (Socket, error) {
+	if skt.Path == "" {
+		skt.Path = "/tmp/taskmaster.sock"
+	}
+	return Socket{
+		Path: skt.Path,
 	}, nil
 }
 
