@@ -1,6 +1,6 @@
 # spec
 
-## Termiology
+## Terminology
 
 - `TaskClient`: the client-side process/program for taskmaster. The target of this spec.
 - `TaskServer`: the server-side process/program for taskmaster.
@@ -32,13 +32,13 @@
 
 TaskClient must have shell-like/REPL interface and accept user's command.
 
-This is an eBNF of command line syntax.
+This is an EBNF of command line syntax.
 
 ```
-command = proc-command, scope | serv-command;
-scope = `Gname`, [":", `Pname`, [":", `Id`]] | "all";
+command      = proc-command, " ", scope | serv-command;
 proc-command = "status" | "start" | "stop" | "restart";
 serv-command = "reload" | "shutdown";
+scope        = Gname, [":", Pname, [":", Id]] | "all";
 ```
 
 ## Command Semantics
@@ -56,29 +56,38 @@ The set of method TaskClient should call is in [cmd.go](https://github.com/massa
 - `Gname` and `Pname` are set, and `Id` is negative for `Program` scope. 
 - `Gname` and `Pname` are set, and `Id` is non-negative for `Process` scope.
 
+```
+Scope     Syntax example              CmdArg (Gname, Pname, Id)
+---------------------------------------------------------------
+all       status all                                ("", "", -1)
+group     status groupname                          ("groupname", "", -1)
+program   status groupname:programname              ("groupname", "programname", -1)
+process   status groupname:programname:0            ("groupname", "programname", 0)
+```
+
 - status
 
   - must call [TaskCmd.Status](https://github.com/massahito/taskmaster/blob/1da2d4ba1dbc4b022f1455c8a57663df02b4a355/cmd.go#L153).
   - CmdArg must be set properly.
-  - must output scoped process's status.
+  - status MUST output the status lines for all processes matching the requested scope, scoped client-side.
 
 - start
 
   - must call [TaskCmd.Start](https://github.com/massahito/taskmaster/blob/1da2d4ba1dbc4b022f1455c8a57663df02b4a355/cmd.go#L83).
   - CmdArg must be set properly.
-  - must output scoped process's status.
+  - status MUST output the status lines for all processes matching the requested scope, scoped client-side.
 
 - stop
 
   - must call [TaskCmd.Stop](https://github.com/massahito/taskmaster/blob/1da2d4ba1dbc4b022f1455c8a57663df02b4a355/cmd.go#L118).
   - CmdArg must be set properly.
-  - must output scoped process's status.
+  - status MUST output the status lines for all processes matching the requested scope, scoped client-side.
 
 - restart
 
   - must call [TaskCmd.Restart](https://github.com/massahito/taskmaster/blob/4c3465b7b7d11cdbe2bd82f2302ccc0e707b8152/cmd.go#L153).
   - CmdArg must be set properly.
-  - must output scoped process's status.
+  - status MUST output the status lines for all processes matching the requested scope, scoped client-side.
 
 - reload
 
@@ -93,7 +102,7 @@ The set of method TaskClient should call is in [cmd.go](https://github.com/massa
 
 ## Output format
 
-`serv-command` described in `Command syntax` section should not output anything.
+`serv-command` in this client (reload, shutdown) do not use CmdArg for scoping; they always act on the TaskServer itself.
 
 `proc-command` described in `Command syntax` section should output the status of Processes. Since TaskServer always response the status of all processes, scoping should be done in TaskClient.
 
@@ -107,8 +116,8 @@ At least, `proc-command` should output:
 Examle of output
 
 ```bash
-thegroupmname:theprogramname:0   RUNNING   pid 1445, 0:01:00
-thegroupmname:theprogramname:1   RUNNING   pid 1446, 0:01:00
-thegroupmname:theprogramname:2   RUNNING   pid 1447, 0:01:00
+thegroupname:theprogramname:0   RUNNING   pid 1445, 0:01:00
+thegroupname:theprogramname:1   RUNNING   pid 1446, 0:01:00
+thegroupname:theprogramname:2   RUNNING   pid 1447, 0:01:00
 ```
 
