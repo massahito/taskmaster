@@ -259,13 +259,7 @@ func (c *controller) stopByCmd(arg CmdArg) error {
 }
 
 func (c *controller) stopAllProcs() error {
-	if isContainBackoff(c.procs) {
-		return fmt.Errorf("the procs contains a backoff process")
-	}
 	for _, ps := range c.procs {
-		if !isStoppable(ps.Status) {
-			continue
-		}
 		err := c.stopProc(ps)
 		if err != nil {
 			return err
@@ -276,13 +270,7 @@ func (c *controller) stopAllProcs() error {
 
 func (c *controller) stopGroupProcs(gname string) error {
 	procs := getGroupProcs(c.procs, gname)
-	if isContainBackoff(procs) {
-		return fmt.Errorf("the procs contains a backoff process")
-	}
 	for _, ps := range procs {
-		if !isStoppable(ps.Status) {
-			continue
-		}
 		err := c.stopProc(ps)
 		if err != nil {
 			return err
@@ -293,13 +281,7 @@ func (c *controller) stopGroupProcs(gname string) error {
 
 func (c *controller) stopProgProcs(gname, pname string) error {
 	procs := getProgProcs(c.procs, gname, pname)
-	if isContainBackoff(procs) {
-		return fmt.Errorf("the procs contains a backoff process")
-	}
 	for _, ps := range procs {
-		if !isStoppable(ps.Status) {
-			continue
-		}
 		err := c.stopProc(ps)
 		if err != nil {
 			return err
@@ -317,8 +299,15 @@ func (c *controller) stopIDProc(gname, pname string, id uint8) error {
 }
 
 func (c *controller) stopProc(ps *Proc) error {
-	if ps.Pid == 0 {
-		panic("stopProc: stopping process of pid 0")
+
+	if !isStoppable(ps.Status) {
+		if ps.Status == ProcBackoff {
+			ps.Status = ProcStopped
+			ps.Time = time.Now()
+			ps.Pid = 0
+			ps.Retry = 0
+		}
+		return nil
 	}
 
 	ps.Status = ProcStopping
