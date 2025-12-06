@@ -129,15 +129,6 @@ func isDead(status ProcStatus) bool {
 	return status == ProcExited || status == ProcStopped || status == ProcFatal
 }
 
-func isContainBackoff(procs []*Proc) bool {
-	for _, ps := range procs {
-		if ps.Status == ProcBackoff {
-			return true
-		}
-	}
-	return false
-}
-
 func checkStatus(procs []Proc, status ProcStatus, req CmdArg) bool {
 
 	for _, ps := range procs {

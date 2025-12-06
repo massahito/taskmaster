@@ -107,13 +107,13 @@ func (c *controller) startByCmd(arg CmdArg) error {
 
 func (c *controller) startAutoProcs() error {
 	for _, ps := range c.procs {
-		if !isStartable(ps.Status) || !ps.Prog.Autostart {
+		if !ps.Prog.Autostart {
 			continue
 		}
-		err := c.startProc(ps)
-		if err != nil {
-			return err
+		if !isStartable(ps.Status) {
+			slog.Debug("startProc: process not startable", "group", ps.Gname, "program", ps.Pname, "id", ps.Id)
 		}
+		c.startProc(ps)
 	}
 	return nil
 }
@@ -121,12 +121,9 @@ func (c *controller) startAutoProcs() error {
 func (c *controller) startAllProcs() error {
 	for _, ps := range c.procs {
 		if !isStartable(ps.Status) {
-			continue
+			slog.Debug("startProc: process not startable", "group", ps.Gname, "program", ps.Pname, "id", ps.Id)
 		}
-		err := c.startProc(ps)
-		if err != nil {
-			return err
-		}
+		c.startProc(ps)
 	}
 	return nil
 }
@@ -135,12 +132,9 @@ func (c *controller) startGroupProcs(gname string) error {
 	procs := getGroupProcs(c.procs, gname)
 	for _, ps := range procs {
 		if !isStartable(ps.Status) {
-			continue
+			slog.Debug("startProc: process not startable", "group", ps.Gname, "program", ps.Pname, "id", ps.Id)
 		}
-		err := c.startProc(ps)
-		if err != nil {
-			return err
-		}
+		c.startProc(ps)
 	}
 	return nil
 }
@@ -149,12 +143,9 @@ func (c *controller) startProgProcs(gname, pname string) error {
 	procs := getProgProcs(c.procs, gname, pname)
 	for _, ps := range procs {
 		if !isStartable(ps.Status) {
-			continue
+			slog.Debug("startProc: process not startable", "group", ps.Gname, "program", ps.Pname, "id", ps.Id)
 		}
-		err := c.startProc(ps)
-		if err != nil {
-			return err
-		}
+		c.startProc(ps)
 	}
 	return nil
 }
@@ -162,11 +153,15 @@ func (c *controller) startProgProcs(gname, pname string) error {
 func (c *controller) startIDProc(gname, pname string, id uint8) error {
 	ps := getIDProc(c.procs, gname, pname, id)
 	if ps == nil {
+		slog.Debug("startIDProc: can't find the process", "group", ps.Gname, "program", ps.Pname, "id", ps.Id)
 		return fmt.Errorf("can't find the process %s:%s:%d", gname, pname, id)
 	}
+
 	if !isStartable(ps.Status) {
+		slog.Debug("startProc: process not startable", "group", ps.Gname, "program", ps.Pname, "id", ps.Id)
 		return fmt.Errorf("the process is not startable")
 	}
+
 	return c.startProc(ps)
 }
 
@@ -259,66 +254,43 @@ func (c *controller) stopByCmd(arg CmdArg) error {
 }
 
 func (c *controller) stopAllProcs() error {
-	if isContainBackoff(c.procs) {
-		return fmt.Errorf("the procs contains a backoff process")
-	}
 	for _, ps := range c.procs {
-		if !isStoppable(ps.Status) {
-			continue
-		}
-		err := c.stopProc(ps)
-		if err != nil {
-			return err
-		}
+		c.stopProc(ps)
 	}
 	return nil
 }
 
 func (c *controller) stopGroupProcs(gname string) error {
 	procs := getGroupProcs(c.procs, gname)
-	if isContainBackoff(procs) {
-		return fmt.Errorf("the procs contains a backoff process")
-	}
 	for _, ps := range procs {
-		if !isStoppable(ps.Status) {
-			continue
-		}
-		err := c.stopProc(ps)
-		if err != nil {
-			return err
-		}
+		c.stopProc(ps)
 	}
 	return nil
 }
 
 func (c *controller) stopProgProcs(gname, pname string) error {
 	procs := getProgProcs(c.procs, gname, pname)
-	if isContainBackoff(procs) {
-		return fmt.Errorf("the procs contains a backoff process")
-	}
 	for _, ps := range procs {
-		if !isStoppable(ps.Status) {
-			continue
-		}
-		err := c.stopProc(ps)
-		if err != nil {
-			return err
-		}
+		c.stopProc(ps)
 	}
 	return nil
 }
 
 func (c *controller) stopIDProc(gname, pname string, id uint8) error {
 	ps := getIDProc(c.procs, gname, pname, id)
-	if !isStoppable(ps.Status) {
-		return fmt.Errorf("the process is not stoppable")
-	}
 	return c.stopProc(ps)
 }
 
 func (c *controller) stopProc(ps *Proc) error {
-	if ps.Pid == 0 {
-		panic("stopProc: stopping process of pid 0")
+
+	if !isStoppable(ps.Status) {
+		if ps.Status == ProcBackoff {
+			ps.Status = ProcStopped
+			ps.Time = time.Now()
+			ps.Pid = 0
+			ps.Retry = 0
+		}
+		return nil
 	}
 
 	ps.Status = ProcStopping
