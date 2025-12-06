@@ -65,6 +65,7 @@ const (
 	procExit
 	procStartCheck
 	procStopCheck
+	procFail
 )
 
 type procCmd struct {
