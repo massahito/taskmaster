@@ -22,7 +22,7 @@ func Run(path string) error {
 			return err
 		}
 		// set logging
-		t.SetLogger(cfg.Logging)
+		t.SetLogger(cfg.Log)
 
 		// create controller
 		ctrl := t.NewController(cfg)

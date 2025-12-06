@@ -9,7 +9,7 @@ import (
 type Config struct {
 	Socket  Socket
 	Cluster map[string]Group
-	Logging Logging
+	Log     Log
 }
 
 type Socket struct {
@@ -50,7 +50,7 @@ type Program struct {
 	Stderr       string
 }
 
-type Logging struct {
+type Log struct {
 	Path   string
 	Size   uint
 	Backup uint

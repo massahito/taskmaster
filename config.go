@@ -3,6 +3,7 @@ package taskmaster
 import (
 	"fmt"
 	"gopkg.in/yaml.v3"
+	"log/slog"
 	"os"
 	"strings"
 	"syscall"
@@ -12,10 +13,16 @@ import (
 type YamlConfig struct {
 	Cluster map[string]YamlGroup `yaml:"cluster"`
 	Socket  YamlSocket           `yaml:"socket"`
+	Log     YamlLog              `yaml:log`
 }
 
 type YamlSocket struct {
 	Path string `yaml:"path"`
+}
+
+type YamlLog struct {
+	Path  string `yaml:"path"`
+	Level string `yaml:"level"`
 }
 
 type YamlGroup struct {
@@ -109,10 +116,15 @@ func parseConfig(cfg YamlConfig) (Config, error) {
 		return Config{}, err
 	}
 
+	log, err := parseLog(cfg.Log)
+	if err != nil {
+		return Config{}, err
+	}
+
 	return Config{
 		Socket:  socket,
 		Cluster: cluster,
-		Logging: Logging{Path: "/tmp/taskmaster.log"},
+		Log:     log,
 	}, nil
 }
 
@@ -123,6 +135,39 @@ func parseSocket(skt YamlSocket) (Socket, error) {
 	return Socket{
 		Path: skt.Path,
 	}, nil
+}
+
+func parseLog(log YamlLog) (Log, error) {
+	level, err := parseLogLevel(log.Level)
+	if err != nil {
+		return Log{}, err
+	}
+
+	if log.Path == "" {
+		log.Path = "/tmp/taskmaster.log"
+	}
+
+	return Log{
+		Path:  log.Path,
+		Level: level,
+	}, nil
+}
+
+func parseLogLevel(level string) (slog.Level, error) {
+	switch level {
+	case "":
+		return slog.LevelInfo, nil
+	case "DEBUG":
+		return slog.LevelDebug, nil
+	case "INFO":
+		return slog.LevelInfo, nil
+	case "WARN":
+		return slog.LevelWarn, nil
+	case "ERROR":
+		return slog.LevelError, nil
+	default:
+		return slog.LevelError, configError("Invalid value \"%s\" for 'log.level'. Expected one of: DEBUG, INFO, WARN, ERROR.", level)
+	}
 }
 
 func parseCluster(grps map[string]YamlGroup) (map[string]Group, error) {
