@@ -195,11 +195,36 @@ func (c *controller) startProc(ps *Proc) error {
 		Env: ps.Prog.Environment,
 	}
 
+	ps.Time = time.Now()
 	proc, err := os.StartProcess(ps.Prog.Cmd[0], ps.Prog.Cmd, attr)
+
 	if err != nil {
-		slog.Error("startProc: error occured in os.StartProcess()", "error", err.Error())
+		defer rStdout.Close()
+		defer rStderr.Close()
+
+		ps.Retry++
+		if ps.Retry < ps.Prog.Startretries {
+			slog.Warn("process exited immediately; backing off", "group", ps.Gname, "program", ps.Pname, "id", ps.Id, "error", err.Error())
+			ps.Status = ProcBackoff
+			arg := CmdArg{Gname: ps.Gname, Pname: ps.Pname, Id: int(ps.Id)}
+			go notifyCheck(c.ctx, c.cmdCh, procCmd{cmd: procFail, arg: arg}, ps.Prog.Startsecs)
+			return err
+		}
+
+		slog.Warn("process failed to start and exited immediately. Retries exhausted — no further attempts will be made.", "group", ps.Gname, "program", ps.Pname, "id", ps.Id, "retry", ps.Retry, "max_retries", ps.Prog.Startretries)
+		ps.Status = ProcFatal
+		ps.Time = time.Now()
+		ps.Pid = 0
+		ps.Retry = 0
+
 		return err
 	}
+
+	ps.Pid = proc.Pid
+	ps.Status = ProcStarting
+	slog.Info("process starting", "group", ps.Gname, "program", ps.Pname, "id", ps.Id, "pid", ps.Pid)
+
+	go notifyCheck(c.ctx, c.cmdCh, procCmd{cmd: procStartCheck, pid: proc.Pid}, ps.Prog.Startsecs)
 
 	if ps.Prog.Stdout == "" {
 		defer rStdout.Close()
@@ -214,14 +239,6 @@ func (c *controller) startProc(ps *Proc) error {
 	}
 
 	go reapProc(c.ctx, proc, c.cmdCh)
-
-	ps.Pid = proc.Pid
-	ps.Status = ProcStarting
-	ps.Time = time.Now()
-
-	slog.Info("process starting", "group", ps.Gname, "program", ps.Pname, "id", ps.Id, "pid", ps.Pid)
-
-	go notifyCheck(c.ctx, c.cmdCh, procCmd{cmd: procStartCheck, pid: proc.Pid}, ps.Prog.Startsecs)
 
 	return nil
 }
@@ -358,6 +375,10 @@ func (c *controller) handleCmd(psch procCmd) {
 		c.handleStartCheck(psch)
 	case procStopCheck:
 		c.handleStopCheck(psch)
+	case procFail:
+		c.handleProcFail(psch)
+	default:
+		panic("unknwon procCmd")
 	}
 }
 
@@ -385,7 +406,7 @@ func (c *controller) handleExit(exitState os.ProcessState) {
 			ps.Status = ProcBackoff
 			return
 		}
-		slog.Warn("process reached the maximum of retries", "group", ps.Gname, "program", ps.Pname, "id", ps.Id, "pid", ps.Pid, "retry", ps.Retry, "max_retries", ps.Prog.Startretries)
+		slog.Warn("process failed to start and exited immediately. Retries exhausted — no further attempts will be made.", "group", ps.Gname, "program", ps.Pname, "id", ps.Id, "pid", ps.Pid, "retry", ps.Retry, "max_retries", ps.Prog.Startretries)
 		ps.Status = ProcFatal
 		ps.Time = time.Now()
 		ps.Pid = 0
@@ -508,6 +529,29 @@ func (c *controller) handleStopCheck(psch procCmd) {
 		panic("receive handleStopCheck in procFatal status")
 	}
 
+}
+
+func (c *controller) handleProcFail(psch procCmd) {
+	ps := getIDProc(c.procs, psch.arg.Gname, psch.arg.Pname, uint8(psch.arg.Id))
+
+	if ps == nil {
+		panic("handleProcFail: can't find retry process")
+	}
+
+	// If they already stopped the process, ignore procCmd
+	if time.Now().Sub(ps.Time) < ps.Prog.Startsecs {
+		return
+	}
+
+	switch ps.Status {
+	case ProcBackoff:
+		// it have to start new process
+		slog.Info("process was retried", "group", ps.Gname, "program", ps.Pname, "id", ps.Id)
+		c.startProc(ps)
+		return
+	default:
+		panic("receive handleProcFail in non-ProcBackoff status")
+	}
 }
 
 // Writing log for child process's stdout/stderr.
