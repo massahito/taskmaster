@@ -142,9 +142,6 @@ func (c *controller) startAutoProcs() error {
 		if !ps.Prog.Autostart {
 			continue
 		}
-		if !isStartable(ps.Status) {
-			slog.Debug("startProc: process not startable", "group", ps.Gname, "program", ps.Pname, "id", ps.Id)
-		}
 		c.startProc(ps)
 	}
 	return nil
@@ -152,9 +149,6 @@ func (c *controller) startAutoProcs() error {
 
 func (c *controller) startAllProcs() error {
 	for _, ps := range c.procs {
-		if !isStartable(ps.Status) {
-			slog.Debug("startProc: process not startable", "group", ps.Gname, "program", ps.Pname, "id", ps.Id)
-		}
 		c.startProc(ps)
 	}
 	return nil
@@ -163,9 +157,6 @@ func (c *controller) startAllProcs() error {
 func (c *controller) startGroupProcs(gname string) error {
 	procs := getGroupProcs(c.procs, gname)
 	for _, ps := range procs {
-		if !isStartable(ps.Status) {
-			slog.Debug("startProc: process not startable", "group", ps.Gname, "program", ps.Pname, "id", ps.Id)
-		}
 		c.startProc(ps)
 	}
 	return nil
@@ -174,9 +165,6 @@ func (c *controller) startGroupProcs(gname string) error {
 func (c *controller) startProgProcs(gname, pname string) error {
 	procs := getProgProcs(c.procs, gname, pname)
 	for _, ps := range procs {
-		if !isStartable(ps.Status) {
-			slog.Debug("startProc: process not startable", "group", ps.Gname, "program", ps.Pname, "id", ps.Id)
-		}
 		c.startProc(ps)
 	}
 	return nil
@@ -189,15 +177,16 @@ func (c *controller) startIDProc(gname, pname string, id uint8) error {
 		return fmt.Errorf("can't find the process %s:%s:%d", gname, pname, id)
 	}
 
+	return c.startProc(ps)
+}
+
+func (c *controller) startProc(ps *Proc) error {
+
 	if !isStartable(ps.Status) {
 		slog.Debug("startProc: process not startable", "group", ps.Gname, "program", ps.Pname, "id", ps.Id)
 		return fmt.Errorf("the process is not startable")
 	}
 
-	return c.startProc(ps)
-}
-
-func (c *controller) startProc(ps *Proc) error {
 	rStdout, wStdout, err := os.Pipe()
 	if err != nil {
 		slog.Error("startProc: pipe error")
@@ -471,6 +460,7 @@ func (c *controller) handleStartCheck(psch procCmd) {
 	case ProcBackoff:
 		// it have to start new process
 		slog.Info("process was backed off", "group", ps.Gname, "program", ps.Pname, "id", ps.Id, "pid", ps.Pid)
+		ps.Status = ProcStopped // set stopped status temporary to call startProc normally
 		c.startProc(ps)
 		return
 	case ProcStopping:
@@ -551,6 +541,7 @@ func (c *controller) handleProcFail(psch procCmd) {
 	case ProcBackoff:
 		// it have to start new process
 		slog.Info("process was retried", "group", ps.Gname, "program", ps.Pname, "id", ps.Id)
+		ps.Status = ProcStopped // set stopped status temporary to call startProc normally
 		c.startProc(ps)
 		return
 	default:
