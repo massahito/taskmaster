@@ -48,13 +48,13 @@ func Run(path string) error {
 				// stopping receiving request and handle current request
 				server.Shutdown()
 				// cleanup controller: stop all processes and goroutines
-				err = tCmd.Shutdown(&t.CmdArg{}, &[]t.Proc{})
+				err = ctrl.Shutdown()
 				return nil
 			case syscall.SIGHUP:
 				// stopping receiving request and handle current request
 				server.Shutdown()
 				// cleanup controller: stop all processes and goroutines
-				err = tCmd.Shutdown(&t.CmdArg{}, &[]t.Proc{})
+				err = ctrl.Shutdown()
 				slog.Info("server reloaded")
 			}
 		}

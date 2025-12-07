@@ -78,6 +78,38 @@ func (c *controller) SendCmd(cmd procCmd) error {
 	}
 }
 
+func (c *controller) Shutdown() error {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	procsCh := make(chan []Proc, 1)
+	errCh := make(chan error)
+
+	c.Subscribe(procsCh)
+	defer c.Unsubscribe(procsCh)
+
+	err := c.SendCmd(procCmd{cmd: procShutDown, resp: errCh, arg: CmdArg{}})
+	if err != nil {
+		return err
+	}
+
+	for {
+		select {
+		case err := <-errCh:
+			if err != nil {
+				return err
+			}
+		case resp := <-procsCh:
+			if isAllProcDead(resp) {
+				return nil
+			}
+		case <-ctx.Done():
+			slog.Warn("fail to stop gracefully")
+			return fmt.Errorf("fail to stop gracefully")
+		}
+	}
+}
+
 // Possibly hanging if one of receivers is either not ready to receive,
 // its channel is full, or exiting without calling Unsubscribe.
 func (c *controller) publish() {
