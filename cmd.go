@@ -103,7 +103,7 @@ func (t *TaskCmd) Start(req *CmdArg, resp *[]Proc) error {
 				return err
 			}
 		case *resp = <-procsCh:
-			if checkStatus(*resp, ProcStarting|ProcRunning, *req) {
+			if checkStatus(*resp, ProcStarting|ProcRunning|ProcBackoff, *req) {
 				return nil
 			}
 		case <-ctx.Done():
