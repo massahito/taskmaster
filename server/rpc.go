@@ -37,8 +37,13 @@ func NewServer(path string, taskCmd *t.TaskCmd) (*server, error) {
 
 func (s *server) Serve() error {
 
+	rpc.DefaultServer = rpc.NewServer()
+
 	rpc.HandleHTTP()
-	rpc.Register(s.t)
+	err := rpc.Register(s.t)
+	if err != nil {
+		return err
+	}
 
 	return s.s.Serve(s.l)
 }
