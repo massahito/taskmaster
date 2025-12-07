@@ -192,35 +192,3 @@ func (t *TaskCmd) Status(req *CmdArg, resp *[]Proc) error {
 
 	return nil
 }
-
-func (t *TaskCmd) Shutdown(req *CmdArg, resp *[]Proc) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
-	procsCh := make(chan []Proc, 1)
-	errCh := make(chan error)
-
-	t.c.Subscribe(procsCh)
-	defer t.c.Unsubscribe(procsCh)
-
-	err := t.c.SendCmd(procCmd{cmd: procShutDown, resp: errCh, arg: *req})
-	if err != nil {
-		return err
-	}
-
-	for {
-		select {
-		case err := <-errCh:
-			if err != nil {
-				return err
-			}
-		case *resp = <-procsCh:
-			if isAllProcDead(*resp) {
-				return nil
-			}
-		case <-ctx.Done():
-			slog.Warn("fail to stop gracefully")
-			return fmt.Errorf("fail to stop gracefully")
-		}
-	}
-}
