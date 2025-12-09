@@ -19,10 +19,16 @@ func Run(path string) error {
 		// parse config
 		cfg, err := t.Parse(path)
 		if err != nil {
+			slog.Error("config.Parse", "error", err.Error())
 			return err
 		}
+
 		// set logging
-		t.SetLogger(cfg.Log)
+		err = t.SetLogger(cfg.Log)
+		if err != nil {
+			slog.Error("taskmaster.SetLogger", "error", err.Error())
+			return err
+		}
 
 		// create controller
 		ctrl := t.NewController(cfg)
@@ -36,6 +42,7 @@ func Run(path string) error {
 		// cerate rpc Server
 		server, err := NewServer(cfg.Socket.Path, tCmd)
 		if err != nil {
+			slog.Error("NewServer", "error", err.Error())
 			return err
 		}
 
@@ -46,15 +53,35 @@ func Run(path string) error {
 			switch sig {
 			case syscall.SIGTERM, syscall.SIGINT:
 				// stopping receiving request and handle current request
-				server.Shutdown()
+				err = server.Shutdown()
+				if err != nil {
+					slog.Error("server.Shutdown", "error", err.Error())
+				}
 				// cleanup controller: stop all processes and goroutines
 				err = ctrl.Shutdown()
+				if err != nil {
+					slog.Error("controller.Shutdown", "error", err.Error())
+				}
 				return nil
 			case syscall.SIGHUP:
 				// stopping receiving request and handle current request
-				server.Shutdown()
+				err = server.Shutdown()
+				if err != nil {
+					slog.Error("server.Shutdown", "error", err.Error())
+				}
+
 				// cleanup controller: stop all processes and goroutines
-				err = ctrl.Shutdown()
+				err2 := ctrl.Shutdown()
+				if err2 != nil {
+					slog.Error("controller.Shutdown", "error", err.Error())
+					return err2
+				}
+
+				// return err after finishing controller.Shutdown()
+				if err != nil {
+					return err
+				}
+
 				slog.Info("server reloaded")
 			}
 		}
