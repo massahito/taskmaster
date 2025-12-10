@@ -142,8 +142,43 @@ func (t *TaskCmd) Stop(req *CmdArg, resp *[]Proc) error {
 				return nil
 			}
 		case <-ctx.Done():
-			slog.Warn("TaskCmd.Stop: Timeout: fail to stopping processes")
-			return fmt.Errorf("TaskCmd.Stop: Timeout: fail to stopping processes")
+			slog.Warn("TaskCmd.Stop: Timeout: fail to stop processes")
+			return fmt.Errorf("TaskCmd.Stop: Timeout: fail to stop processes")
+		}
+	}
+
+	return nil
+
+}
+
+func (t *TaskCmd) StopAndWait(req *CmdArg, resp *[]Proc) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	procsCh := make(chan []Proc, 1)
+	errCh := make(chan error)
+
+	t.c.Subscribe(procsCh)
+	defer t.c.Unsubscribe(procsCh)
+
+	err := t.c.SendCmd(procCmd{cmd: procStop, resp: errCh, arg: *req})
+	if err != nil {
+		return err
+	}
+
+	for {
+		select {
+		case err := <-errCh:
+			if err != nil {
+				return err
+			}
+		case *resp = <-procsCh:
+			if checkStatus(*resp, ProcStopped|ProcExited|ProcFatal, *req) {
+				return nil
+			}
+		case <-ctx.Done():
+			slog.Warn("TaskCmd.StopAndWait: Timeout: fail to stop processes")
+			return fmt.Errorf("TaskCmd.StopAndWait: Timeout: fail to stop processes")
 		}
 	}
 
@@ -153,7 +188,7 @@ func (t *TaskCmd) Stop(req *CmdArg, resp *[]Proc) error {
 
 func (t *TaskCmd) Restart(req *CmdArg, resp *[]Proc) error {
 
-	err := t.Stop(req, resp)
+	err := t.StopAndWait(req, resp)
 	if err != nil {
 		return err
 	}
