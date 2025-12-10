@@ -118,7 +118,12 @@ func (c *controller) publish() {
 
 	procs := copyProcs(c.procs)
 	for pubCh, _ := range c.pubChs {
-		pubCh <- procs
+		select {
+		case pubCh <- procs:
+			slog.Debug("publish: published", "channel", fmt.Sprintf("%p", pubCh))
+		default:
+			slog.Debug("publish: skipped", "channel", fmt.Sprintf("%p", pubCh))
+		}
 	}
 }
 
