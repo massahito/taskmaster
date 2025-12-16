@@ -161,6 +161,10 @@ func (c *controller) startAllProcs() error {
 
 func (c *controller) startGroupProcs(gname string) error {
 	procs := getGroupProcs(c.procs, gname)
+	if len(procs) == 0 {
+		slog.Error("startGroupProcs", "error", "receive start request for non-existent group", "group", gname)
+		return fmt.Errorf("start request for non-existent group: %s", gname)
+	}
 	for _, ps := range procs {
 		c.startProc(ps)
 	}
@@ -169,6 +173,10 @@ func (c *controller) startGroupProcs(gname string) error {
 
 func (c *controller) startProgProcs(gname, pname string) error {
 	procs := getProgProcs(c.procs, gname, pname)
+	if len(procs) == 0 {
+		slog.Error("startProgProcs", "error", "receive start request for non-existent program", "group", gname, "program", pname)
+		return fmt.Errorf("start request for non-existent group: %s:%s", gname, pname)
+	}
 	for _, ps := range procs {
 		c.startProc(ps)
 	}
@@ -178,8 +186,8 @@ func (c *controller) startProgProcs(gname, pname string) error {
 func (c *controller) startIDProc(gname, pname string, id uint8) error {
 	ps := getIDProc(c.procs, gname, pname, id)
 	if ps == nil {
-		slog.Debug("startIDProc: can't find the process", "group", ps.Gname, "program", ps.Pname, "id", ps.Id)
-		return fmt.Errorf("can't find the process %s:%s:%d", gname, pname, id)
+		slog.Error("startIDProc", "error", "receive start request for non-existent process", "group", gname, "program", pname, "id", id)
+		return fmt.Errorf("start request for non-existent process: %s:%s:%d", gname, pname, id)
 	}
 
 	return c.startProc(ps)
