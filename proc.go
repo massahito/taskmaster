@@ -31,6 +31,16 @@ const (
 	ProcFatal
 )
 
+var ProcStatusMap = map[ProcStatus]string{
+	ProcStopped:  "Stopped",
+	ProcStopping: "Stopping",
+	ProcStarting: "Starting",
+	ProcRunning:  "Running",
+	ProcBackoff:  "Backoff",
+	ProcExited:   "Exited",
+	ProcFatal:    "Fatal",
+}
+
 func copyProcs(procs []*Proc) []Proc {
 	ret := []Proc{}
 

@@ -1,22 +1,25 @@
 package taskmaster
 
 import (
-	"context"
 	"fmt"
-	"log/slog"
 	"os"
-	"time"
+	"sync"
 )
 
 type TaskCmd struct {
-	c   *controller
-	pid int
+	caller      *caller
+	cfg         Config
+	pid         int
+	isBusy      bool
+	isBusyMutex sync.Mutex
 }
 
-func NewTaskCmd(c *controller) *TaskCmd {
+func NewTaskCmd(cfg Config, ctrl *controller) *TaskCmd {
+	// TODO store isBusy.
 	return &TaskCmd{
-		c:   c,
-		pid: os.Getpid(),
+		caller: &caller{ctrl: ctrl},
+		cfg:    cfg,
+		pid:    os.Getpid(),
 	}
 }
 
@@ -57,11 +60,13 @@ func isProcCmd(arg CmdArg) bool {
 type cmd uint32
 
 const (
-	procStartUp cmd = iota
+	procAutoStart cmd = iota
 	procGetStatus
 	procStart
 	procStop
 	procShutDown
+	procCreate
+	procDelete
 	procExit
 	procStartCheck
 	procStopCheck
@@ -72,158 +77,181 @@ type procCmd struct {
 	pid   int
 	cmd   cmd
 	arg   CmdArg
+	cfg   Config
 	state os.ProcessState
 	resp  chan<- error
 }
 
 func (t *TaskCmd) Pid(_ *CmdArg, pid *int) error {
+	t.isBusyMutex.Lock()
+	if t.isBusy {
+		t.isBusyMutex.Unlock()
+		return fmt.Errorf("the TaskServer is busy")
+	}
+	t.isBusyMutex.Unlock()
+
 	*pid = t.pid
 	return nil
 }
 
 func (t *TaskCmd) Start(req *CmdArg, resp *[]Proc) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
-	procsCh := make(chan []Proc, 1)
-	errCh := make(chan error)
-
-	t.c.Subscribe(procsCh)
-	defer t.c.Unsubscribe(procsCh)
-
-	err := t.c.SendCmd(procCmd{cmd: procStart, resp: errCh, arg: *req})
-	if err != nil {
-		return err
+	t.isBusyMutex.Lock()
+	if t.isBusy {
+		t.isBusyMutex.Unlock()
+		return fmt.Errorf("the TaskServer is busy")
 	}
+	t.isBusyMutex.Unlock()
 
-	for {
-		select {
-		case err := <-errCh:
-			if err != nil {
-				return err
-			}
-		case *resp = <-procsCh:
-			if checkStatus(*resp, ProcStarting|ProcRunning|ProcBackoff, *req) {
-				return nil
-			}
-		case <-ctx.Done():
-			slog.Warn("TaskCmd.Start: Timeout: fail to start processes")
-			return fmt.Errorf("TaskCmd.Start: Timeout: fail to start processes")
-		}
-	}
-
-	return nil
-
+	return t.caller.start(req, resp)
 }
 
 func (t *TaskCmd) Stop(req *CmdArg, resp *[]Proc) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
-	procsCh := make(chan []Proc, 1)
-	errCh := make(chan error)
-
-	t.c.Subscribe(procsCh)
-	defer t.c.Unsubscribe(procsCh)
-
-	err := t.c.SendCmd(procCmd{cmd: procStop, resp: errCh, arg: *req})
-	if err != nil {
-		return err
+	t.isBusyMutex.Lock()
+	if t.isBusy {
+		t.isBusyMutex.Unlock()
+		return fmt.Errorf("the TaskServer is busy")
 	}
+	t.isBusyMutex.Unlock()
 
-	for {
-		select {
-		case err := <-errCh:
-			if err != nil {
-				return err
-			}
-		case *resp = <-procsCh:
-			if checkStatus(*resp, ProcStopping|ProcStopped|ProcExited|ProcFatal, *req) {
-				return nil
-			}
-		case <-ctx.Done():
-			slog.Warn("TaskCmd.Stop: Timeout: fail to stop processes")
-			return fmt.Errorf("TaskCmd.Stop: Timeout: fail to stop processes")
-		}
-	}
-
-	return nil
-
-}
-
-func (t *TaskCmd) StopAndWait(req *CmdArg, resp *[]Proc) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
-	procsCh := make(chan []Proc, 1)
-	errCh := make(chan error)
-
-	t.c.Subscribe(procsCh)
-	defer t.c.Unsubscribe(procsCh)
-
-	err := t.c.SendCmd(procCmd{cmd: procStop, resp: errCh, arg: *req})
-	if err != nil {
-		return err
-	}
-
-	for {
-		select {
-		case err := <-errCh:
-			if err != nil {
-				return err
-			}
-		case *resp = <-procsCh:
-			if checkStatus(*resp, ProcStopped|ProcExited|ProcFatal, *req) {
-				return nil
-			}
-		case <-ctx.Done():
-			slog.Warn("TaskCmd.StopAndWait: Timeout: fail to stop processes")
-			return fmt.Errorf("TaskCmd.StopAndWait: Timeout: fail to stop processes")
-		}
-	}
-
-	return nil
-
+	return t.caller.stop(req, resp)
 }
 
 func (t *TaskCmd) Restart(req *CmdArg, resp *[]Proc) error {
+	t.isBusyMutex.Lock()
+	if t.isBusy {
+		t.isBusyMutex.Unlock()
+		return fmt.Errorf("the TaskServer is busy")
+	}
+	t.isBusyMutex.Unlock()
 
-	err := t.StopAndWait(req, resp)
+	err := t.caller.halt(req, resp)
 	if err != nil {
 		return err
 	}
-
-	return t.Start(req, resp)
+	return t.caller.start(req, resp)
 }
 
 func (t *TaskCmd) Status(req *CmdArg, resp *[]Proc) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
+	t.isBusyMutex.Lock()
+	if t.isBusy {
+		t.isBusyMutex.Unlock()
+		return fmt.Errorf("the TaskServer is busy")
+	}
+	t.isBusyMutex.Unlock()
 
-	procsCh := make(chan []Proc, 1)
-	errCh := make(chan error)
+	return t.caller.status(req, resp)
+}
 
-	t.c.Subscribe(procsCh)
-	defer t.c.Unsubscribe(procsCh)
+func (t *TaskCmd) Update(req *CmdArg, resp *[]Proc) error {
+	t.isBusyMutex.Lock()
+	if t.isBusy {
+		t.isBusyMutex.Unlock()
+		return fmt.Errorf("the TaskServer is busy")
+	}
+	t.isBusy = true
+	t.isBusyMutex.Unlock()
 
-	err := t.c.SendCmd(procCmd{cmd: procGetStatus, resp: errCh, arg: *req})
+	defer func() {
+		t.isBusyMutex.Lock()
+		t.isBusy = false
+		t.isBusyMutex.Unlock()
+	}()
+
+	cfg, err := Parse(t.cfg.Path)
 	if err != nil {
 		return err
 	}
 
-	for {
-		select {
-		case err := <-errCh:
-			if err != nil {
-				return err
-			}
-		case *resp = <-procsCh:
-			return nil
-		case <-ctx.Done():
-			slog.Warn("TaskCmd.Status: Timeout: fail to get Status")
-			return fmt.Errorf("TaskCmd.Status: Timeout: fail to get Status")
-		}
+	oldCfg := t.cfg
+	newCfg, err := updateConfig(oldCfg, cfg, req)
+	if err != nil {
+		return err
 	}
 
+	err = t.caller.update(oldCfg, newCfg, req, resp)
+	if err != nil {
+		return err
+	}
+
+	t.cfg = newCfg
+
 	return nil
+}
+
+func updateConfig(oldCfg, newCfg Config, arg *CmdArg) (Config, error) {
+	dst, err := cloneConfig(oldCfg)
+	if err != nil {
+		return oldCfg, err
+	}
+
+	if isGeneralCmd(*arg) {
+		dst.Cluster = newCfg.Cluster
+		return oldCfg, nil
+	} else if isGroupCmd(*arg) {
+		return updateGroupConfig(dst, newCfg, arg)
+	} else if isProgCmd(*arg) {
+		return updateProgConfig(dst, newCfg, arg)
+	}
+	return Config{}, fmt.Errorf("invalid argument scope")
+}
+
+func updateGroupConfig(oldCfg, newCfg Config, req *CmdArg) (Config, error) {
+	_, oldOk := oldCfg.Cluster[req.Gname]
+	newGrp, newOk := newCfg.Cluster[req.Gname]
+
+	switch {
+	case oldOk && newOk:
+		oldCfg.Cluster[req.Gname] = newGrp
+		return oldCfg, nil
+	case oldOk && !newOk:
+		delete(oldCfg.Cluster, req.Gname)
+		return oldCfg, nil
+	case !oldOk && newOk:
+		oldCfg.Cluster[req.Gname] = newGrp
+		return oldCfg, nil
+	}
+
+	return oldCfg, fmt.Errorf("can't find Group named %s", req.Gname)
+}
+
+func updateProgConfig(oldCfg, newCfg Config, req *CmdArg) (Config, error) {
+	gname := req.Gname
+	pname := req.Pname
+	oldGrp, oldOk := oldCfg.Cluster[gname]
+	newGrp, newOk := newCfg.Cluster[gname]
+
+	switch {
+	case oldOk && newOk:
+		_, oldOk := oldGrp.Progs[pname]
+		newProg, newOk := newGrp.Progs[pname]
+		switch {
+		case oldOk && newOk:
+			oldCfg.Cluster[gname].Progs[pname] = newProg
+			return oldCfg, nil
+		case oldOk && !newOk:
+			delete(oldCfg.Cluster[gname].Progs, pname)
+			return oldCfg, nil
+		case !oldOk && newOk:
+			oldCfg.Cluster[gname].Progs[pname] = newProg
+			return oldCfg, nil
+		}
+		return oldCfg, fmt.Errorf("can't find the Program named %s", pname)
+	case oldOk && !newOk:
+		_, oldOk := oldGrp.Progs[pname]
+		if !oldOk {
+			return oldCfg, fmt.Errorf("can't find the Program named %s", pname)
+		}
+		delete(oldCfg.Cluster[gname].Progs, pname)
+		return oldCfg, nil
+	case !oldOk && newOk:
+		newProg, newOk := newGrp.Progs[pname]
+		if !newOk {
+			return oldCfg, fmt.Errorf("can't find the Program named %s", pname)
+		}
+		newGrp.Progs = map[string]Program{pname: newProg}
+		oldCfg.Cluster[gname] = newGrp
+		return oldCfg, nil
+	}
+
+	return oldCfg, fmt.Errorf("can't find the Group named %s", gname)
 }

@@ -37,7 +37,7 @@ func Run(path string) error {
 		ctrl.Start()
 
 		// create TaskCmd
-		tCmd := t.NewTaskCmd(ctrl)
+		tCmd := t.NewTaskCmd(cfg, ctrl)
 
 		// cerate rpc Server
 		server, err := NewServer(cfg.Socket.Path, tCmd)
