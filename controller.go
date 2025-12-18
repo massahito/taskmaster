@@ -21,7 +21,6 @@ const (
 )
 
 type controller struct {
-	cfg    Config
 	procs  []*Proc
 	cmdCh  chan procCmd
 	pubChs map[chan<- []Proc]bool
@@ -38,7 +37,6 @@ func NewController(cfg Config) *controller {
 	slog.Debug("new controller were created.")
 
 	return &controller{
-		cfg:    cfg,
 		procs:  procs,
 		cmdCh:  make(chan procCmd, 100),
 		pubChs: map[chan<- []Proc]bool{},
@@ -51,7 +49,7 @@ func NewController(cfg Config) *controller {
 func (c *controller) Start() error {
 	resp := make(chan error)
 	go c.loop()
-	if err := c.SendCmd(procCmd{cmd: procStartUp, resp: resp}); err != nil {
+	if err := c.SendCmd(procCmd{cmd: procAutoStart, arg: CmdArg{Id: -1}, resp: resp}); err != nil {
 		return err
 	}
 	return <-resp
@@ -142,11 +140,22 @@ func (c *controller) startByCmd(arg CmdArg) error {
 	return fmt.Errorf("can't find command args type")
 }
 
-func (c *controller) startAutoProcs() error {
+func (c *controller) startAutoProcs(arg CmdArg) error {
 	for _, ps := range c.procs {
+		if arg.Gname != "" && ps.Gname != arg.Gname {
+			continue
+
+		}
+		if arg.Pname != "" && ps.Pname != arg.Pname {
+			continue
+		}
+		if 0 <= arg.Id && ps.Id != uint8(arg.Id) {
+			continue
+		}
 		if !ps.Prog.Autostart {
 			continue
 		}
+
 		c.startProc(ps)
 	}
 	return nil
@@ -361,10 +370,11 @@ func (c *controller) loop() {
 
 // Possibly hanging if psch.resp is either not ready to receive,
 // its channel is full, or exiting without calling Unsubscribe.
+// TODO deny user request when shutdown
 func (c *controller) handleCmd(psch procCmd) {
 	switch psch.cmd {
-	case procStartUp:
-		psch.resp <- c.startAutoProcs()
+	case procAutoStart:
+		psch.resp <- c.startAutoProcs(psch.arg)
 	case procStart:
 		psch.resp <- c.startByCmd(psch.arg)
 	case procStop:
@@ -374,7 +384,12 @@ func (c *controller) handleCmd(psch procCmd) {
 	case procShutDown:
 		slog.Info("receive shutdown command")
 		c.status = ctrlStopped
+		time.Sleep(time.Second * 1)
 		psch.resp <- c.stopAllProcs()
+	case procCreate:
+		psch.resp <- c.createProc(psch.arg, psch.cfg)
+	case procDelete:
+		psch.resp <- c.deleteProc(psch.arg)
 	case procExit:
 		c.handleExit(psch.state)
 	case procStartCheck:
@@ -386,6 +401,58 @@ func (c *controller) handleCmd(psch procCmd) {
 	default:
 		panic("unknwon procCmd")
 	}
+}
+
+func (c *controller) createProc(arg CmdArg, cfg Config) error {
+	for gname, group := range cfg.Cluster {
+		if arg.Gname != "" && arg.Gname != gname {
+			continue
+		}
+		for pname, prog := range group.Progs {
+			if arg.Pname != "" && arg.Pname != pname {
+				continue
+			}
+			Stdout := prog.Stdout
+			Stderr := prog.Stderr
+			for i := uint8(0); i < prog.Numproc; i++ {
+				if prog.Numproc != 1 && prog.Stdout != "" {
+					Stdout = replaceUint(prog.Stdout, "(%d)", i)
+				}
+				if prog.Numproc != 1 && prog.Stderr != "" {
+					Stderr = replaceUint(prog.Stderr, "(%d)", i)
+				}
+				ps := &Proc{
+					Pid:    0,
+					Retry:  0,
+					Gname:  gname,
+					Pname:  pname,
+					Id:     i,
+					Status: ProcStopped,
+					Prog:   prog,
+					Stdout: Stdout,
+					Stderr: Stderr,
+				}
+				c.procs = append(c.procs, ps)
+			}
+		}
+	}
+
+	return nil
+}
+
+func (c *controller) deleteProc(arg CmdArg) error {
+	procs := []*Proc{}
+	for _, ps := range c.procs {
+		if arg.Gname == "" || arg.Gname == ps.Gname {
+			if arg.Pname == "" || arg.Pname == ps.Pname {
+				continue
+			}
+		}
+		procs = append(procs, ps)
+	}
+	c.procs = procs
+
+	return nil
 }
 
 func (c *controller) handleExit(exitState os.ProcessState) {

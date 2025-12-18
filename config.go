@@ -102,10 +102,10 @@ func Parse(path string) (Config, error) {
 		return Config{}, configError(err.Error())
 	}
 
-	return parseConfig(cfg)
+	return parseConfig(path, cfg)
 }
 
-func parseConfig(cfg YamlConfig) (Config, error) {
+func parseConfig(path string, cfg YamlConfig) (Config, error) {
 	socket, err := parseSocket(cfg.Socket)
 	if err != nil {
 		return Config{}, err
@@ -122,6 +122,7 @@ func parseConfig(cfg YamlConfig) (Config, error) {
 	}
 
 	return Config{
+		Path:    path,
 		Socket:  socket,
 		Cluster: cluster,
 		Log:     log,
