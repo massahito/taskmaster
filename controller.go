@@ -150,7 +150,6 @@ func (c *controller) startAutoProcs(arg CmdArg) error {
 			continue
 		}
 		if 0 <= arg.Id && ps.Id != uint8(arg.Id) {
-			fmt.Println(arg.Id, ps.Id)
 			continue
 		}
 		if !ps.Prog.Autostart {

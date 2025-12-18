@@ -15,7 +15,6 @@ type TaskCmd struct {
 }
 
 func NewTaskCmd(cfg Config, ctrl *controller) *TaskCmd {
-	// TODO store isBusy.
 	return &TaskCmd{
 		caller: &caller{ctrl: ctrl},
 		cfg:    cfg,
@@ -186,7 +185,7 @@ func updateConfig(oldCfg, newCfg Config, arg *CmdArg) (Config, error) {
 
 	if isGeneralCmd(*arg) {
 		dst.Cluster = newCfg.Cluster
-		return oldCfg, nil
+		return dst, nil
 	} else if isGroupCmd(*arg) {
 		return updateGroupConfig(dst, newCfg, arg)
 	} else if isProgCmd(*arg) {
@@ -196,22 +195,23 @@ func updateConfig(oldCfg, newCfg Config, arg *CmdArg) (Config, error) {
 }
 
 func updateGroupConfig(oldCfg, newCfg Config, req *CmdArg) (Config, error) {
-	_, oldOk := oldCfg.Cluster[req.Gname]
-	newGrp, newOk := newCfg.Cluster[req.Gname]
+	gname := req.Gname
+	_, oldOk := oldCfg.Cluster[gname]
+	newGrp, newOk := newCfg.Cluster[gname]
 
 	switch {
 	case oldOk && newOk:
-		oldCfg.Cluster[req.Gname] = newGrp
+		oldCfg.Cluster[gname] = newGrp
 		return oldCfg, nil
 	case oldOk && !newOk:
-		delete(oldCfg.Cluster, req.Gname)
+		delete(oldCfg.Cluster, gname)
 		return oldCfg, nil
 	case !oldOk && newOk:
-		oldCfg.Cluster[req.Gname] = newGrp
+		oldCfg.Cluster[gname] = newGrp
 		return oldCfg, nil
 	}
 
-	return oldCfg, fmt.Errorf("can't find Group named %s", req.Gname)
+	return oldCfg, fmt.Errorf("can't find Group named %s", gname)
 }
 
 func updateProgConfig(oldCfg, newCfg Config, req *CmdArg) (Config, error) {
