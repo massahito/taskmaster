@@ -19,14 +19,12 @@ func Run(path string) error {
 		// parse config
 		cfg, err := t.Parse(path)
 		if err != nil {
-			slog.Error("config.Parse", "error", err.Error())
 			return err
 		}
 
 		// set logging
 		err = t.SetLogger(cfg.Log)
 		if err != nil {
-			slog.Error("taskmaster.SetLogger", "error", err.Error())
 			return err
 		}
 
@@ -34,7 +32,10 @@ func Run(path string) error {
 		ctrl := t.NewController(cfg)
 
 		// start controller
-		ctrl.Start()
+		err = ctrl.Start()
+		if err != nil {
+			return err
+		}
 
 		// create TaskCmd
 		tCmd := t.NewTaskCmd(cfg, ctrl)
@@ -42,7 +43,6 @@ func Run(path string) error {
 		// cerate rpc Server
 		server, err := NewServer(cfg.Socket.Path, tCmd)
 		if err != nil {
-			slog.Error("NewServer", "error", err.Error())
 			return err
 		}
 

@@ -91,6 +91,7 @@ func Parse(path string) (Config, error) {
 
 	file, err := os.OpenFile(path, os.O_RDONLY, 0444)
 	if err != nil {
+		slog.Error("config.Parse: os.OpenFile", "error", err.Error())
 		return Config{}, configError("fail to open %s", path)
 	}
 	defer file.Close()
@@ -99,6 +100,7 @@ func Parse(path string) (Config, error) {
 	decoder.KnownFields(true)
 	err = decoder.Decode(&cfg)
 	if err != nil {
+		slog.Error("config.Parse: yaml.Decoder.Decode", "error", err.Error())
 		return Config{}, configError(err.Error())
 	}
 
@@ -108,16 +110,19 @@ func Parse(path string) (Config, error) {
 func parseConfig(path string, cfg YamlConfig) (Config, error) {
 	socket, err := parseSocket(cfg.Socket)
 	if err != nil {
+		slog.Error("config.Parse: parseSocket", "error", err.Error())
 		return Config{}, err
 	}
 
 	cluster, err := parseCluster(cfg.Cluster)
 	if err != nil {
+		slog.Error("config.Parse: parseCluster", "error", err.Error())
 		return Config{}, err
 	}
 
 	log, err := parseLog(cfg.Log)
 	if err != nil {
+		slog.Error("config.Parse: parseLog", "error", err.Error())
 		return Config{}, err
 	}
 
