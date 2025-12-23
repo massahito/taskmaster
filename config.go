@@ -17,7 +17,26 @@ type YamlConfig struct {
 }
 
 type YamlSocket struct {
-	Path string `yaml:"path"`
+	Path string      `yaml:"path"`
+	Mode os.FileMode `yaml:"mode"`
+	UID  int         `yaml:"UID"`
+	GID  int         `yaml:"GID"`
+}
+
+func (s *YamlSocket) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	type rawSocket YamlSocket
+	raw := rawSocket{
+		Path: "/tmp/taskmaster.sock",
+		Mode: 0660,
+		UID:  os.Getuid(),
+		GID:  os.Getgid(),
+	}
+	if err := unmarshal(&raw); err != nil {
+		return err
+	}
+
+	*s = YamlSocket(raw)
+	return nil
 }
 
 type YamlLog struct {
@@ -135,11 +154,11 @@ func parseConfig(path string, cfg YamlConfig) (Config, error) {
 }
 
 func parseSocket(skt YamlSocket) (Socket, error) {
-	if skt.Path == "" {
-		skt.Path = "/tmp/taskmaster.sock"
-	}
 	return Socket{
 		Path: skt.Path,
+		Mode: skt.Mode,
+		UID:  skt.UID,
+		GID:  skt.GID,
 	}, nil
 }
 

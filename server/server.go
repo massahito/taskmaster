@@ -41,7 +41,7 @@ func Run(path string) error {
 		tCmd := t.NewTaskCmd(cfg, ctrl)
 
 		// cerate rpc Server
-		server, err := NewServer(cfg.Socket.Path, tCmd)
+		server, err := NewServer(cfg.Socket, tCmd)
 		if err != nil {
 			return err
 		}

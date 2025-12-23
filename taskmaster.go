@@ -3,6 +3,7 @@ package taskmaster
 import (
 	"encoding/json"
 	"log/slog"
+	"os"
 	"reflect"
 	"syscall"
 	"time"
@@ -16,9 +17,10 @@ type Config struct {
 }
 
 type Socket struct {
-	Path  string
-	Chmod uint32
-	Chown string
+	Path string
+	Mode os.FileMode
+	UID  int
+	GID  int
 }
 
 type Group struct {
@@ -73,10 +75,8 @@ func (p Program) IsSame(other Program) bool {
 }
 
 type Log struct {
-	Path   string
-	Size   uint
-	Backup uint
-	Level  slog.Level
+	Path  string
+	Level slog.Level
 }
 
 func cloneConfig(cfg Config) (ret Config, err error) {
