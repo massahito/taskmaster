@@ -21,7 +21,7 @@ type server struct {
 func NewServer(path string, taskCmd *t.TaskCmd) (*server, error) {
 	l, err := net.Listen("unix", path)
 	if err != nil {
-		slog.Error("NewServer:", "error", err.Error())
+		slog.Error("rpc.NewServer:", "error", err.Error())
 		return nil, err
 	}
 
@@ -42,6 +42,7 @@ func (s *server) Serve() error {
 	rpc.HandleHTTP()
 	err := rpc.Register(s.t)
 	if err != nil {
+		slog.Error("rpc.Serve:", "error", err.Error())
 		return err
 	}
 
@@ -53,5 +54,8 @@ func (s *server) Shutdown() error {
 	defer cancel()
 
 	err := s.s.Shutdown(ctx)
+	if err != nil {
+		slog.Error("rpc.Shutdown:", "error", err.Error())
+	}
 	return err
 }

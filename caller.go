@@ -11,11 +11,11 @@ type caller struct {
 	ctrl *controller
 }
 
-func (c *caller) status(req *CmdArg, resp *[]Proc) error {
+func (c *caller) status(req *CmdArg, resp *Procs) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	procsCh := make(chan []Proc, 1)
+	procsCh := make(chan Procs, 1)
 	errCh := make(chan error)
 
 	c.ctrl.Subscribe(procsCh)
@@ -30,24 +30,25 @@ func (c *caller) status(req *CmdArg, resp *[]Proc) error {
 		select {
 		case err := <-errCh:
 			if err != nil {
+				slog.Error("caller.status", "error", err.Error())
 				return err
 			}
 		case *resp = <-procsCh:
 			return nil
 		case <-ctx.Done():
-			slog.Warn("TaskCmd.Status: Timeout: fail to get Status")
-			return fmt.Errorf("TaskCmd.Status: Timeout: fail to get Status")
+			slog.Warn("caller.status: Timeout: fail to get Status")
+			return fmt.Errorf("Status: Timeout: fail to get Status")
 		}
 	}
 
 	return nil
 }
 
-func (c *caller) start(req *CmdArg, resp *[]Proc) error {
+func (c *caller) start(req *CmdArg, resp *Procs) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	procsCh := make(chan []Proc, 1)
+	procsCh := make(chan Procs, 1)
 	errCh := make(chan error)
 
 	c.ctrl.Subscribe(procsCh)
@@ -55,6 +56,7 @@ func (c *caller) start(req *CmdArg, resp *[]Proc) error {
 
 	err := c.ctrl.SendCmd(procCmd{cmd: procStart, resp: errCh, arg: *req})
 	if err != nil {
+		slog.Error("caller.start", "error", err.Error())
 		return err
 	}
 
@@ -62,26 +64,27 @@ func (c *caller) start(req *CmdArg, resp *[]Proc) error {
 		select {
 		case err := <-errCh:
 			if err != nil {
+				slog.Error("caller.start", "error", err.Error())
 				return err
 			}
 		case *resp = <-procsCh:
-			if checkStatus(*resp, ProcStarting|ProcRunning|ProcBackoff, *req) {
+			if (*resp).CheckStatus(ProcStarting|ProcRunning|ProcBackoff, *req) {
 				return nil
 			}
 		case <-ctx.Done():
-			slog.Warn("TaskCmd.Start: Timeout: fail to start processes")
-			return fmt.Errorf("TaskCmd.Start: Timeout: fail to start processes")
+			slog.Warn("caller.start: Timeout: fail to start processes")
+			return fmt.Errorf("Start: Timeout: fail to start processes")
 		}
 	}
 
 	return nil
 }
 
-func (c *caller) stop(req *CmdArg, resp *[]Proc) error {
+func (c *caller) stop(req *CmdArg, resp *Procs) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	procsCh := make(chan []Proc, 1)
+	procsCh := make(chan Procs, 1)
 	errCh := make(chan error)
 
 	c.ctrl.Subscribe(procsCh)
@@ -89,6 +92,7 @@ func (c *caller) stop(req *CmdArg, resp *[]Proc) error {
 
 	err := c.ctrl.SendCmd(procCmd{cmd: procStop, resp: errCh, arg: *req})
 	if err != nil {
+		slog.Error("caller.stop", "error", err.Error())
 		return err
 	}
 
@@ -96,26 +100,27 @@ func (c *caller) stop(req *CmdArg, resp *[]Proc) error {
 		select {
 		case err := <-errCh:
 			if err != nil {
+				slog.Error("caller.stop", "error", err.Error())
 				return err
 			}
 		case *resp = <-procsCh:
-			if checkStatus(*resp, ProcStopping|ProcStopped|ProcExited|ProcFatal, *req) {
+			if (*resp).CheckStatus(ProcStopping|ProcStopped|ProcExited|ProcFatal, *req) {
 				return nil
 			}
 		case <-ctx.Done():
-			slog.Warn("TaskCmd.Stop: Timeout: fail to stop processes")
-			return fmt.Errorf("TaskCmd.Stop: Timeout: fail to stop processes")
+			slog.Warn("caller.stop: Timeout: fail to stop processes")
+			return fmt.Errorf("Stop: Timeout: fail to stop processes")
 		}
 	}
 
 	return nil
 }
 
-func (c *caller) halt(req *CmdArg, resp *[]Proc) error {
+func (c *caller) halt(req *CmdArg, resp *Procs) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	procsCh := make(chan []Proc, 1)
+	procsCh := make(chan Procs, 1)
 	errCh := make(chan error)
 
 	c.ctrl.Subscribe(procsCh)
@@ -123,6 +128,7 @@ func (c *caller) halt(req *CmdArg, resp *[]Proc) error {
 
 	err := c.ctrl.SendCmd(procCmd{cmd: procStop, resp: errCh, arg: *req})
 	if err != nil {
+		slog.Error("caller.halt", "error", err.Error())
 		return err
 	}
 
@@ -130,25 +136,26 @@ func (c *caller) halt(req *CmdArg, resp *[]Proc) error {
 		select {
 		case err := <-errCh:
 			if err != nil {
+				slog.Error("caller.halt", "error", err.Error())
 				return err
 			}
 		case *resp = <-procsCh:
-			if checkStatus(*resp, ProcStopped|ProcExited|ProcFatal, *req) {
+			if (*resp).CheckStatus(ProcStopped|ProcExited|ProcFatal, *req) {
 				return nil
 			}
 		case <-ctx.Done():
-			slog.Warn("TaskCmd.StopAndWait: Timeout: fail to stop processes")
-			return fmt.Errorf("TaskCmd.StopAndWait: Timeout: fail to stop processes")
+			slog.Warn("caller.halt: Timeout: fail to stop processes")
+			return fmt.Errorf("Halt: Timeout: fail to stop processes")
 		}
 	}
 
 	return nil
 }
 
-func (c *caller) update(oldCfg, newCfg Config, req *CmdArg, resp *[]Proc) error {
+func (c *caller) update(oldCfg, newCfg Config, req *CmdArg, resp *Procs) error {
 	// stop
 	for gname, oldGrp := range oldCfg.Cluster {
-		arg := &CmdArg{Gname: gname, Id: -1}
+		arg := &CmdArg{Gname: gname, ID: -1}
 		newGrp, ok := newCfg.Cluster[gname]
 		if !ok {
 			err := c.halt(arg, resp)
@@ -177,7 +184,7 @@ func (c *caller) update(oldCfg, newCfg Config, req *CmdArg, resp *[]Proc) error 
 
 	// start
 	for gname, newGrp := range newCfg.Cluster {
-		arg := &CmdArg{Gname: gname, Id: -1}
+		arg := &CmdArg{Gname: gname, ID: -1}
 		oldGrp, ok := oldCfg.Cluster[gname]
 		if !ok {
 			err := c.createProc(oldCfg, arg, resp)
@@ -208,11 +215,11 @@ func (c *caller) update(oldCfg, newCfg Config, req *CmdArg, resp *[]Proc) error 
 
 }
 
-func (c *caller) createProc(cfg Config, req *CmdArg, resp *[]Proc) error {
+func (c *caller) createProc(cfg Config, req *CmdArg, resp *Procs) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	procsCh := make(chan []Proc, 1)
+	procsCh := make(chan Procs, 1)
 	errCh := make(chan error)
 
 	c.ctrl.Subscribe(procsCh)
@@ -220,6 +227,7 @@ func (c *caller) createProc(cfg Config, req *CmdArg, resp *[]Proc) error {
 
 	err := c.ctrl.SendCmd(procCmd{cmd: procCreate, resp: errCh, arg: *req, cfg: cfg})
 	if err != nil {
+		slog.Error("caller.createProc", "error", err.Error())
 		return err
 	}
 
@@ -227,24 +235,25 @@ func (c *caller) createProc(cfg Config, req *CmdArg, resp *[]Proc) error {
 		select {
 		case err := <-errCh:
 			if err != nil {
+				slog.Error("caller.createProc", "error", err.Error())
 				return err
 			}
 		case *resp = <-procsCh:
 			return nil
 		case <-ctx.Done():
-			slog.Warn("TaskCmd.createProc: Timeout: fail to get Status")
-			return fmt.Errorf("TaskCmd.createProc: Timeout: fail to get Status")
+			slog.Warn("caller.createProc: Timeout: fail to create Processes")
+			return fmt.Errorf("CreateProc: Timeout: fail to create Processes")
 		}
 	}
 
 	return nil
 }
 
-func (c *caller) deleteProc(req *CmdArg, resp *[]Proc) error {
+func (c *caller) deleteProc(req *CmdArg, resp *Procs) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	procsCh := make(chan []Proc, 1)
+	procsCh := make(chan Procs, 1)
 	errCh := make(chan error)
 
 	c.ctrl.Subscribe(procsCh)
@@ -252,6 +261,7 @@ func (c *caller) deleteProc(req *CmdArg, resp *[]Proc) error {
 
 	err := c.ctrl.SendCmd(procCmd{cmd: procDelete, resp: errCh, arg: *req})
 	if err != nil {
+		slog.Error("caller.deleteProc", "error", err.Error())
 		return err
 	}
 
@@ -259,24 +269,25 @@ func (c *caller) deleteProc(req *CmdArg, resp *[]Proc) error {
 		select {
 		case err := <-errCh:
 			if err != nil {
+				slog.Error("caller.deleteProc", "error", err.Error())
 				return err
 			}
 		case *resp = <-procsCh:
 			return nil
 		case <-ctx.Done():
-			slog.Warn("TaskCmd.deleteProcs: Timeout: fail to get Status")
-			return fmt.Errorf("TaskCmd.deleteProcs: Timeout: fail to get Status")
+			slog.Warn("caller.deleteProcs: Timeout: fail to delete Processes")
+			return fmt.Errorf("DeleteProcs: Timeout: fail to delete Processes")
 		}
 	}
 
 	return nil
 }
 
-func (c *caller) autoStart(req *CmdArg, resp *[]Proc) error {
+func (c *caller) autoStart(req *CmdArg, resp *Procs) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	procsCh := make(chan []Proc, 1)
+	procsCh := make(chan Procs, 1)
 	errCh := make(chan error)
 
 	c.ctrl.Subscribe(procsCh)
@@ -284,6 +295,7 @@ func (c *caller) autoStart(req *CmdArg, resp *[]Proc) error {
 
 	err := c.ctrl.SendCmd(procCmd{cmd: procAutoStart, resp: errCh, arg: *req})
 	if err != nil {
+		slog.Error("caller.autoStart", "error", err.Error())
 		return err
 	}
 
@@ -291,15 +303,16 @@ func (c *caller) autoStart(req *CmdArg, resp *[]Proc) error {
 		select {
 		case err := <-errCh:
 			if err != nil {
+				slog.Error("caller.autoStart", "error", err.Error())
 				return err
 			}
 		case *resp = <-procsCh:
-			if checkStatus(*resp, ProcStarting|ProcRunning|ProcBackoff, *req) {
+			if (*resp).CheckStatus(ProcStarting|ProcRunning|ProcBackoff, *req) {
 				return nil
 			}
 		case <-ctx.Done():
-			slog.Warn("TaskCmd.autoStart: Timeout: fail to start processes")
-			return fmt.Errorf("TaskCmd.autoStart: Timeout: fail to start processes")
+			slog.Warn("caller.autoStart: Timeout: fail to start processes")
+			return fmt.Errorf("AutoStart: Timeout: fail to start processes")
 		}
 	}
 

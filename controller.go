@@ -21,9 +21,9 @@ const (
 )
 
 type controller struct {
-	procs  []*Proc
+	procs  procRefs
 	cmdCh  chan procCmd
-	pubChs map[chan<- []Proc]bool
+	pubChs map[chan<- Procs]bool
 	status ctrlStatus
 	mutex  sync.Mutex
 	ctx    context.Context
@@ -32,14 +32,14 @@ type controller struct {
 
 func NewController(cfg Config) *controller {
 	ctx, cancel := context.WithCancel(context.Background())
-	procs := genProcs(cfg.Cluster)
+	procs := buildProcRefFromGroup(cfg.Cluster)
 
 	slog.Debug("new controller were created.")
 
 	return &controller{
 		procs:  procs,
 		cmdCh:  make(chan procCmd, 100),
-		pubChs: map[chan<- []Proc]bool{},
+		pubChs: map[chan<- Procs]bool{},
 		status: ctrlStopped,
 		ctx:    ctx,
 		cancel: cancel,
@@ -47,21 +47,25 @@ func NewController(cfg Config) *controller {
 }
 
 func (c *controller) Start() error {
-	resp := make(chan error)
 	go c.loop()
-	if err := c.SendCmd(procCmd{cmd: procAutoStart, arg: CmdArg{Id: -1}, resp: resp}); err != nil {
+
+	resp := make(chan error)
+	time.Sleep(500 * time.Millisecond)
+	if err := c.SendCmd(procCmd{cmd: procAutoStart, arg: CmdArg{ID: -1}, resp: resp}); err != nil {
+		slog.Error("controller.Start", "error", err.Error())
 		return err
 	}
+
 	return <-resp
 }
 
-func (c *controller) Subscribe(subCh chan<- []Proc) {
+func (c *controller) Subscribe(subCh chan<- Procs) {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 	c.pubChs[subCh] = true
 }
 
-func (c *controller) Unsubscribe(subCh chan<- []Proc) {
+func (c *controller) Unsubscribe(subCh chan<- Procs) {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 	delete(c.pubChs, subCh)
@@ -80,7 +84,7 @@ func (c *controller) Shutdown() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	procsCh := make(chan []Proc, 1)
+	procsCh := make(chan Procs, 1)
 	errCh := make(chan error)
 
 	c.Subscribe(procsCh)
@@ -88,6 +92,7 @@ func (c *controller) Shutdown() error {
 
 	err := c.SendCmd(procCmd{cmd: procShutDown, resp: errCh, arg: CmdArg{}})
 	if err != nil {
+		slog.Error("controller.Shutdown", "error", err.Error())
 		return err
 	}
 
@@ -95,10 +100,11 @@ func (c *controller) Shutdown() error {
 		select {
 		case err := <-errCh:
 			if err != nil {
+				slog.Error("controller.Shutdown", "error", err.Error())
 				return err
 			}
 		case resp := <-procsCh:
-			if isAllProcDead(resp) {
+			if resp.IsAllProcDead() {
 				return nil
 			}
 		case <-ctx.Done():
@@ -114,7 +120,7 @@ func (c *controller) publish() {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 
-	procs := copyProcs(c.procs)
+	procs := c.procs.Procs()
 	for pubCh, _ := range c.pubChs {
 		select {
 		case pubCh <- procs:
@@ -134,7 +140,7 @@ func (c *controller) startByCmd(arg CmdArg) error {
 	} else if isProgCmd(arg) {
 		return c.startProgProcs(arg.Gname, arg.Pname)
 	} else if isProcCmd(arg) {
-		return c.startIDProc(arg.Gname, arg.Pname, uint8(arg.Id))
+		return c.startIDProc(arg.Gname, arg.Pname, uint8(arg.ID))
 	}
 
 	return fmt.Errorf("can't find command args type")
@@ -144,12 +150,11 @@ func (c *controller) startAutoProcs(arg CmdArg) error {
 	for _, ps := range c.procs {
 		if arg.Gname != "" && ps.Gname != arg.Gname {
 			continue
-
 		}
 		if arg.Pname != "" && ps.Pname != arg.Pname {
 			continue
 		}
-		if 0 <= arg.Id && ps.Id != uint8(arg.Id) {
+		if 0 <= arg.ID && ps.ID != uint8(arg.ID) {
 			continue
 		}
 		if !ps.Prog.Autostart {
@@ -169,7 +174,7 @@ func (c *controller) startAllProcs() error {
 }
 
 func (c *controller) startGroupProcs(gname string) error {
-	procs := getGroupProcs(c.procs, gname)
+	procs := c.procs.filterByGroup(gname)
 	if len(procs) == 0 {
 		slog.Error("startGroupProcs", "error", "receive start request for non-existent group", "group", gname)
 		return fmt.Errorf("start request for non-existent group: %s", gname)
@@ -181,7 +186,7 @@ func (c *controller) startGroupProcs(gname string) error {
 }
 
 func (c *controller) startProgProcs(gname, pname string) error {
-	procs := getProgProcs(c.procs, gname, pname)
+	procs := c.procs.filterByProg(gname, pname)
 	if len(procs) == 0 {
 		slog.Error("startProgProcs", "error", "receive start request for non-existent program", "group", gname, "program", pname)
 		return fmt.Errorf("start request for non-existent group: %s:%s", gname, pname)
@@ -193,7 +198,7 @@ func (c *controller) startProgProcs(gname, pname string) error {
 }
 
 func (c *controller) startIDProc(gname, pname string, id uint8) error {
-	ps := getIDProc(c.procs, gname, pname, id)
+	ps := c.procs.filterByID(gname, pname, id)
 	if ps == nil {
 		slog.Error("startIDProc", "error", "receive start request for non-existent process", "group", gname, "program", pname, "id", id)
 		return fmt.Errorf("start request for non-existent process: %s:%s:%d", gname, pname, id)
@@ -202,10 +207,10 @@ func (c *controller) startIDProc(gname, pname string, id uint8) error {
 	return c.startProc(ps)
 }
 
-func (c *controller) startProc(ps *Proc) error {
+func (c *controller) startProc(ps procRef) error {
 
-	if !isStartable(ps.Status) {
-		slog.Debug("startProc: process not startable", "group", ps.Gname, "program", ps.Pname, "id", ps.Id)
+	if !ps.Status.IsStartable() {
+		slog.Debug("startProc: process not startable", "group", ps.Gname, "program", ps.Pname, "id", ps.ID)
 		return fmt.Errorf("the process is not startable")
 	}
 
@@ -242,27 +247,27 @@ func (c *controller) startProc(ps *Proc) error {
 
 		ps.Retry++
 		if ps.Retry < ps.Prog.Startretries {
-			slog.Warn("process exited immediately; backing off", "group", ps.Gname, "program", ps.Pname, "id", ps.Id, "error", err.Error())
+			slog.Warn("process exited immediately; backing off", "group", ps.Gname, "program", ps.Pname, "id", ps.ID, "error", err.Error())
 			ps.Status = ProcBackoff
-			arg := CmdArg{Gname: ps.Gname, Pname: ps.Pname, Id: int(ps.Id)}
-			go notifyCheck(c.ctx, c.cmdCh, procCmd{cmd: procFail, arg: arg}, ps.Prog.Startsecs)
+			arg := CmdArg{Gname: ps.Gname, Pname: ps.Pname, ID: int(ps.ID)}
+			go notify(c.ctx, c.cmdCh, procCmd{cmd: procFail, arg: arg}, ps.Prog.Startsecs)
 			return err
 		}
 
-		slog.Warn("process failed to start and exited immediately. Retries exhausted — no further attempts will be made.", "group", ps.Gname, "program", ps.Pname, "id", ps.Id, "retry", ps.Retry, "max_retries", ps.Prog.Startretries)
+		slog.Warn("process failed to start and exited immediately. Retries exhausted — no further attempts will be made.", "group", ps.Gname, "program", ps.Pname, "id", ps.ID, "retry", ps.Retry, "max_retries", ps.Prog.Startretries)
 		ps.Status = ProcFatal
 		ps.Time = time.Now()
-		ps.Pid = 0
+		ps.PID = 0
 		ps.Retry = 0
 
 		return err
 	}
 
-	ps.Pid = proc.Pid
+	ps.PID = proc.Pid
 	ps.Status = ProcStarting
-	slog.Info("process starting", "group", ps.Gname, "program", ps.Pname, "id", ps.Id, "pid", ps.Pid)
+	slog.Info("process starting", "group", ps.Gname, "program", ps.Pname, "id", ps.ID, "pid", ps.PID)
 
-	go notifyCheck(c.ctx, c.cmdCh, procCmd{cmd: procStartCheck, pid: proc.Pid}, ps.Prog.Startsecs)
+	go notify(c.ctx, c.cmdCh, procCmd{cmd: procStartCheck, pid: proc.Pid}, ps.Prog.Startsecs)
 
 	if ps.Prog.Stdout == "" {
 		defer rStdout.Close()
@@ -276,7 +281,7 @@ func (c *controller) startProc(ps *Proc) error {
 		go stdLog(ps.Stderr, rStderr)
 	}
 
-	go reapProc(c.ctx, proc, c.cmdCh)
+	go reap(c.ctx, proc, c.cmdCh)
 
 	return nil
 }
@@ -290,7 +295,7 @@ func (c *controller) stopByCmd(arg CmdArg) error {
 	} else if isProgCmd(arg) {
 		return c.stopProgProcs(arg.Gname, arg.Pname)
 	} else if isProcCmd(arg) {
-		return c.stopIDProc(arg.Gname, arg.Pname, uint8(arg.Id))
+		return c.stopIDProc(arg.Gname, arg.Pname, uint8(arg.ID))
 	}
 
 	return fmt.Errorf("can't find command args type")
@@ -304,7 +309,7 @@ func (c *controller) stopAllProcs() error {
 }
 
 func (c *controller) stopGroupProcs(gname string) error {
-	procs := getGroupProcs(c.procs, gname)
+	procs := c.procs.filterByGroup(gname)
 	for _, ps := range procs {
 		c.stopProc(ps)
 	}
@@ -312,7 +317,7 @@ func (c *controller) stopGroupProcs(gname string) error {
 }
 
 func (c *controller) stopProgProcs(gname, pname string) error {
-	procs := getProgProcs(c.procs, gname, pname)
+	procs := c.procs.filterByProg(gname, pname)
 	for _, ps := range procs {
 		c.stopProc(ps)
 	}
@@ -320,33 +325,34 @@ func (c *controller) stopProgProcs(gname, pname string) error {
 }
 
 func (c *controller) stopIDProc(gname, pname string, id uint8) error {
-	ps := getIDProc(c.procs, gname, pname, id)
+	ps := c.procs.filterByID(gname, pname, id)
 	return c.stopProc(ps)
 }
 
 func (c *controller) stopProc(ps *Proc) error {
 
-	if !isStoppable(ps.Status) {
+	if !ps.Status.IsStoppable() {
 		if ps.Status == ProcBackoff {
 			ps.Status = ProcStopped
 			ps.Time = time.Now()
-			ps.Pid = 0
+			ps.PID = 0
 			ps.Retry = 0
+			slog.Warn("stopProc: stopped the backoff process", "group", ps.Gname, "program", ps.Pname, "id", ps.ID)
 		}
 		return nil
 	}
 
 	ps.Status = ProcStopping
 
-	err := syscall.Kill(ps.Pid, ps.Prog.Stopsignal)
+	err := syscall.Kill(ps.PID, ps.Prog.Stopsignal)
 	if err != nil {
-		slog.Error("stopProc: kill error", "pid", ps.Pid)
+		slog.Error("stopProc: kill error", "group", ps.Gname, "program", ps.Pname, "id", ps.ID, "pid", ps.PID)
 		return err
 	}
 
-	slog.Info("process stopping", "group", ps.Gname, "program", ps.Pname, "id", ps.Id, "pid", ps.Pid)
+	slog.Info("process stopping", "group", ps.Gname, "program", ps.Pname, "id", ps.ID, "pid", ps.PID)
 
-	go notifyCheck(c.ctx, c.cmdCh, procCmd{cmd: procStopCheck, pid: ps.Pid}, ps.Prog.Stopwaitsecs)
+	go notify(c.ctx, c.cmdCh, procCmd{cmd: procStopCheck, pid: ps.PID}, ps.Prog.Stopwaitsecs)
 
 	return nil
 }
@@ -357,7 +363,9 @@ func (c *controller) loop() {
 	c.status = ctrlRunning
 
 	for {
-		if c.status == ctrlStopped && isAllProcDead(copyProcs(c.procs)) {
+		if c.status == ctrlStopped && c.procs.Procs().IsAllProcDead() {
+			time.Sleep(time.Second * 1)
+			c.publish()
 			slog.Info("shutdown controller complete")
 			return
 		}
@@ -384,7 +392,6 @@ func (c *controller) handleCmd(psch procCmd) {
 	case procShutDown:
 		slog.Info("receive shutdown command")
 		c.status = ctrlStopped
-		time.Sleep(time.Second * 1)
 		psch.resp <- c.stopAllProcs()
 	case procCreate:
 		psch.resp <- c.createProc(psch.arg, psch.cfg)
@@ -404,36 +411,13 @@ func (c *controller) handleCmd(psch procCmd) {
 }
 
 func (c *controller) createProc(arg CmdArg, cfg Config) error {
+
 	for gname, group := range cfg.Cluster {
 		if arg.Gname != "" && arg.Gname != gname {
 			continue
 		}
 		for pname, prog := range group.Progs {
-			if arg.Pname != "" && arg.Pname != pname {
-				continue
-			}
-			Stdout := prog.Stdout
-			Stderr := prog.Stderr
-			for i := uint8(0); i < prog.Numproc; i++ {
-				if prog.Numproc != 1 && prog.Stdout != "" {
-					Stdout = replaceUint(prog.Stdout, "(%d)", i)
-				}
-				if prog.Numproc != 1 && prog.Stderr != "" {
-					Stderr = replaceUint(prog.Stderr, "(%d)", i)
-				}
-				ps := &Proc{
-					Pid:    0,
-					Retry:  0,
-					Gname:  gname,
-					Pname:  pname,
-					Id:     i,
-					Status: ProcStopped,
-					Prog:   prog,
-					Stdout: Stdout,
-					Stderr: Stderr,
-				}
-				c.procs = append(c.procs, ps)
-			}
+			c.procs = append(c.procs, buildProcRef(gname, pname, prog)...)
 		}
 	}
 
@@ -441,7 +425,8 @@ func (c *controller) createProc(arg CmdArg, cfg Config) error {
 }
 
 func (c *controller) deleteProc(arg CmdArg) error {
-	procs := []*Proc{}
+	procs := procRefs{}
+
 	for _, ps := range c.procs {
 		if arg.Gname == "" || arg.Gname == ps.Gname {
 			if arg.Pname == "" || arg.Pname == ps.Pname {
@@ -456,48 +441,48 @@ func (c *controller) deleteProc(arg CmdArg) error {
 }
 
 func (c *controller) handleExit(exitState os.ProcessState) {
-	ps := searchProc(c.procs, exitState.Pid())
+	ps := c.procs.searchByPID(exitState.Pid())
 
 	if ps == nil {
 		panic(fmt.Sprintf("can't find pid: %d", exitState.Pid()))
 	}
 
-	slog.Info("detect process exit", "group", ps.Gname, "program", ps.Pname, "id", ps.Id, "pid", ps.Pid, "exit_code", exitState.ExitCode())
+	slog.Info("detect process exit", "group", ps.Gname, "program", ps.Pname, "id", ps.ID, "pid", ps.PID, "exit_code", exitState.ExitCode())
 
 	switch {
 	case ps.Status == ProcStopping || exitState.ExitCode() == -1:
 		// correct behavior
-		slog.Info("process stopped", "group", ps.Gname, "program", ps.Pname, "id", ps.Id, "pid", ps.Pid)
+		slog.Info("process stopped", "group", ps.Gname, "program", ps.Pname, "id", ps.ID, "pid", ps.PID)
 		ps.Status = ProcStopped
 		ps.Time = time.Now()
-		ps.Pid = 0
+		ps.PID = 0
 	case ps.Status == ProcStarting:
 		// correct behavior, but process stopped unexpectedly
 		ps.Retry++
 		if ps.Retry < ps.Prog.Startretries {
-			slog.Info("process exited before startsecs; backing off", "group", ps.Gname, "program", ps.Pname, "id", ps.Id, "pid", ps.Pid)
+			slog.Info("process exited before startsecs; backing off", "group", ps.Gname, "program", ps.Pname, "id", ps.ID, "pid", ps.PID)
 			ps.Status = ProcBackoff
 			return
 		}
-		slog.Warn("process failed to start and exited immediately. Retries exhausted — no further attempts will be made.", "group", ps.Gname, "program", ps.Pname, "id", ps.Id, "pid", ps.Pid, "retry", ps.Retry, "max_retries", ps.Prog.Startretries)
+		slog.Warn("process failed to start and exited immediately. Retries exhausted — no further attempts will be made.", "group", ps.Gname, "program", ps.Pname, "id", ps.ID, "pid", ps.PID, "retry", ps.Retry, "max_retries", ps.Prog.Startretries)
 		ps.Status = ProcFatal
 		ps.Time = time.Now()
-		ps.Pid = 0
+		ps.PID = 0
 		ps.Retry = 0
 	case ps.Status == ProcRunning:
 		// correct behavior, but process might stop unexpectedly
 		autorestart := ps.Prog.Autorestart
 		switch {
 		case autorestart == RestartNever:
-			slog.Info("process exited", "group", ps.Gname, "program", ps.Pname, "id", ps.Id, "pid", ps.Pid)
+			slog.Info("process exited", "group", ps.Gname, "program", ps.Pname, "id", ps.ID, "pid", ps.PID)
 			ps.Status = ProcExited
 			ps.Time = time.Now()
 		case autorestart == RestartUnexpected && slices.Contains(ps.Prog.Exitcodes, uint8(exitState.ExitCode())):
-			slog.Info("process exited", "group", ps.Gname, "program", ps.Pname, "id", ps.Id, "pid", ps.Pid)
+			slog.Info("process exited", "group", ps.Gname, "program", ps.Pname, "id", ps.ID, "pid", ps.PID)
 			ps.Status = ProcExited
 			ps.Time = time.Now()
 		default:
-			slog.Info("process will be restarted", "group", ps.Gname, "program", ps.Pname, "id", ps.Id, "pid", ps.Pid, "exit_code", exitState.ExitCode())
+			slog.Info("process will be restarted", "group", ps.Gname, "program", ps.Pname, "id", ps.ID, "pid", ps.PID, "exit_code", exitState.ExitCode())
 			c.startProc(ps)
 		}
 	case ps.Status == ProcStopped:
@@ -516,7 +501,7 @@ func (c *controller) handleExit(exitState os.ProcessState) {
 }
 
 func (c *controller) handleStartCheck(psch procCmd) {
-	ps := searchProc(c.procs, psch.pid)
+	ps := c.procs.searchByPID(psch.pid)
 
 	// It's possible when stopping process right after starting.
 	if ps == nil {
@@ -529,23 +514,23 @@ func (c *controller) handleStartCheck(psch procCmd) {
 		return
 	}
 
-	slog.Info("check start", "group", ps.Gname, "program", ps.Pname, "id", ps.Id, "pid", ps.Pid)
+	slog.Info("check start", "group", ps.Gname, "program", ps.Pname, "id", ps.ID, "pid", ps.PID)
 
 	switch ps.Status {
 	case ProcStarting:
 		// state should be running
-		slog.Info("process was starting cleanly", "group", ps.Gname, "program", ps.Pname, "id", ps.Id, "pid", ps.Pid)
+		slog.Info("process was starting cleanly", "group", ps.Gname, "program", ps.Pname, "id", ps.ID, "pid", ps.PID)
 		ps.Status = ProcRunning
 		return
 	case ProcBackoff:
 		// it have to start new process
-		slog.Info("process was backed off", "group", ps.Gname, "program", ps.Pname, "id", ps.Id, "pid", ps.Pid)
+		slog.Info("process was backed off", "group", ps.Gname, "program", ps.Pname, "id", ps.ID, "pid", ps.PID)
 		ps.Status = ProcStopped // set stopped status temporary to call startProc normally
 		c.startProc(ps)
 		return
 	case ProcStopping:
 		// it happens when stopping process right after starting
-		slog.Debug("process might be stopped right after starting", "group", ps.Gname, "program", ps.Pname, "id", ps.Id, "pid", ps.Pid)
+		slog.Debug("process might be stopped right after starting", "group", ps.Gname, "program", ps.Pname, "id", ps.ID, "pid", ps.PID)
 		return
 	case ProcStopped:
 		// incorrect behavior.
@@ -563,7 +548,7 @@ func (c *controller) handleStartCheck(psch procCmd) {
 }
 
 func (c *controller) handleStopCheck(psch procCmd) {
-	ps := searchProc(c.procs, psch.pid)
+	ps := c.procs.searchByPID(psch.pid)
 	// it's natural to be nil when process is stopped normally
 	if ps == nil {
 		return
@@ -574,12 +559,12 @@ func (c *controller) handleStopCheck(psch procCmd) {
 		return
 	}
 
-	slog.Debug("check stop", "group", ps.Gname, "program", ps.Pname, "id", ps.Id, "pid", ps.Pid)
+	slog.Debug("check stop", "group", ps.Gname, "program", ps.Pname, "id", ps.ID, "pid", ps.PID)
 
 	switch ps.Status {
 	case ProcStopping:
-		slog.Warn("process wasn't stopped correctly; sending SIGKILL", "group", ps.Gname, "program", ps.Pname, "id", ps.Id, "pid", ps.Pid)
-		err := syscall.Kill(ps.Pid, syscall.SIGKILL)
+		slog.Warn("process wasn't stopped correctly; sending SIGKILL", "group", ps.Gname, "program", ps.Pname, "id", ps.ID, "pid", ps.PID)
+		err := syscall.Kill(ps.PID, syscall.SIGKILL)
 		if err != nil {
 			slog.Error("handleStopCheck: got an error from syscall.Kill", "error", err.Error())
 		}
@@ -606,7 +591,7 @@ func (c *controller) handleStopCheck(psch procCmd) {
 }
 
 func (c *controller) handleProcFail(psch procCmd) {
-	ps := getIDProc(c.procs, psch.arg.Gname, psch.arg.Pname, uint8(psch.arg.Id))
+	ps := c.procs.filterByID(psch.arg.Gname, psch.arg.Pname, uint8(psch.arg.ID))
 
 	if ps == nil {
 		panic("handleProcFail: can't find retry process")
@@ -620,7 +605,7 @@ func (c *controller) handleProcFail(psch procCmd) {
 	switch ps.Status {
 	case ProcBackoff:
 		// it have to start new process
-		slog.Info("process was retried", "group", ps.Gname, "program", ps.Pname, "id", ps.Id)
+		slog.Info("process was retried", "group", ps.Gname, "program", ps.Pname, "id", ps.ID)
 		ps.Status = ProcStopped // set stopped status temporary to call startProc normally
 		c.startProc(ps)
 		return
@@ -657,7 +642,7 @@ func stdLog(path string, in *os.File) {
 	}
 }
 
-func notifyCheck(ctx context.Context, cmdCh chan<- procCmd, psch procCmd, wait time.Duration) {
+func notify(ctx context.Context, cmdCh chan<- procCmd, psch procCmd, wait time.Duration) {
 	select {
 	case <-time.After(wait):
 		select {
@@ -670,10 +655,10 @@ func notifyCheck(ctx context.Context, cmdCh chan<- procCmd, psch procCmd, wait t
 }
 
 // Wait process is finished.
-func reapProc(ctx context.Context, proc *os.Process, cmdCh chan<- procCmd) {
+func reap(ctx context.Context, proc *os.Process, cmdCh chan<- procCmd) {
 	state, err := proc.Wait()
 	if err != nil {
-		slog.Error("reapProc: got an error from os.Wait()", "error", err.Error())
+		slog.Error("reap: got an error from os.Wait()", "error", err.Error())
 	}
 
 	select {

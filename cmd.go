@@ -25,32 +25,32 @@ func NewTaskCmd(cfg Config, ctrl *controller) *TaskCmd {
 type CmdArg struct {
 	Gname string
 	Pname string
-	Id    int
+	ID    int
 }
 
 func isGeneralCmd(arg CmdArg) bool {
-	if arg.Gname == "" && arg.Pname == "" && arg.Id < 0 {
+	if arg.Gname == "" && arg.Pname == "" && arg.ID < 0 {
 		return true
 	}
 	return false
 }
 
 func isGroupCmd(arg CmdArg) bool {
-	if arg.Gname != "" && arg.Pname == "" && arg.Id < 0 {
+	if arg.Gname != "" && arg.Pname == "" && arg.ID < 0 {
 		return true
 	}
 	return false
 }
 
 func isProgCmd(arg CmdArg) bool {
-	if arg.Gname != "" && arg.Pname != "" && arg.Id < 0 {
+	if arg.Gname != "" && arg.Pname != "" && arg.ID < 0 {
 		return true
 	}
 	return false
 }
 
 func isProcCmd(arg CmdArg) bool {
-	if arg.Gname != "" && arg.Pname != "" && 0 <= arg.Id {
+	if arg.Gname != "" && arg.Pname != "" && 0 <= arg.ID {
 		return true
 	}
 	return false
@@ -93,7 +93,7 @@ func (t *TaskCmd) Pid(_ *CmdArg, pid *int) error {
 	return nil
 }
 
-func (t *TaskCmd) Start(req *CmdArg, resp *[]Proc) error {
+func (t *TaskCmd) Start(req *CmdArg, resp *Procs) error {
 	t.isBusyMutex.Lock()
 	if t.isBusy {
 		t.isBusyMutex.Unlock()
@@ -104,7 +104,7 @@ func (t *TaskCmd) Start(req *CmdArg, resp *[]Proc) error {
 	return t.caller.start(req, resp)
 }
 
-func (t *TaskCmd) Stop(req *CmdArg, resp *[]Proc) error {
+func (t *TaskCmd) Stop(req *CmdArg, resp *Procs) error {
 	t.isBusyMutex.Lock()
 	if t.isBusy {
 		t.isBusyMutex.Unlock()
@@ -115,7 +115,7 @@ func (t *TaskCmd) Stop(req *CmdArg, resp *[]Proc) error {
 	return t.caller.stop(req, resp)
 }
 
-func (t *TaskCmd) Restart(req *CmdArg, resp *[]Proc) error {
+func (t *TaskCmd) Restart(req *CmdArg, resp *Procs) error {
 	t.isBusyMutex.Lock()
 	if t.isBusy {
 		t.isBusyMutex.Unlock()
@@ -130,7 +130,7 @@ func (t *TaskCmd) Restart(req *CmdArg, resp *[]Proc) error {
 	return t.caller.start(req, resp)
 }
 
-func (t *TaskCmd) Status(req *CmdArg, resp *[]Proc) error {
+func (t *TaskCmd) Status(req *CmdArg, resp *Procs) error {
 	t.isBusyMutex.Lock()
 	if t.isBusy {
 		t.isBusyMutex.Unlock()
@@ -141,7 +141,7 @@ func (t *TaskCmd) Status(req *CmdArg, resp *[]Proc) error {
 	return t.caller.status(req, resp)
 }
 
-func (t *TaskCmd) Update(req *CmdArg, resp *[]Proc) error {
+func (t *TaskCmd) Update(req *CmdArg, resp *Procs) error {
 	t.isBusyMutex.Lock()
 	if t.isBusy {
 		t.isBusyMutex.Unlock()
