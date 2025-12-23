@@ -167,7 +167,7 @@ func (c *caller) update(oldCfg, newCfg Config, req *CmdArg, resp *Procs) error {
 
 		for pname, oldProg := range oldGrp.Progs {
 			newProg, ok := newGrp.Progs[pname]
-			if !ok || !isSameProgram(newProg, oldProg) {
+			if !ok || !newProg.IsSame(oldProg) {
 				arg.Pname = pname
 				err := c.halt(arg, resp)
 				if err != nil {
@@ -196,7 +196,7 @@ func (c *caller) update(oldCfg, newCfg Config, req *CmdArg, resp *Procs) error {
 
 		for pname, newProg := range newGrp.Progs {
 			oldProg, ok := oldGrp.Progs[pname]
-			if !ok || !isSameProgram(newProg, oldProg) {
+			if !ok || !newProg.IsSame(oldProg) {
 				arg.Pname = pname
 				err := c.createProc(newCfg, arg, resp)
 				if err != nil {

@@ -53,30 +53,30 @@ type Program struct {
 	Stderr       string
 }
 
+func (p Program) IsSame(other Program) bool {
+	return (p.Numproc == other.Numproc &&
+		p.Priority == other.Priority &&
+		p.Directory == other.Directory &&
+		p.Autostart == other.Autostart &&
+		p.Startretries == other.Startretries &&
+		p.Stopasgroup == other.Stopasgroup &&
+		p.Startsecs == other.Startsecs &&
+		p.Stopwaitsecs == other.Stopwaitsecs &&
+		p.Autorestart == other.Autorestart &&
+		p.Stopsignal == other.Stopsignal &&
+		p.Umask == other.Umask &&
+		p.Stdout == other.Stdout &&
+		p.Stderr == other.Stderr &&
+		reflect.DeepEqual(p.Cmd, other.Cmd) &&
+		reflect.DeepEqual(p.Exitcodes, other.Exitcodes) &&
+		reflect.DeepEqual(p.Environment, other.Environment))
+}
+
 type Log struct {
 	Path   string
 	Size   uint
 	Backup uint
 	Level  slog.Level
-}
-
-func isSameProgram(a, b Program) bool {
-	return (a.Numproc == b.Numproc &&
-		a.Priority == b.Priority &&
-		a.Directory == b.Directory &&
-		a.Autostart == b.Autostart &&
-		a.Startretries == b.Startretries &&
-		a.Stopasgroup == b.Stopasgroup &&
-		a.Startsecs == b.Startsecs &&
-		a.Stopwaitsecs == b.Stopwaitsecs &&
-		a.Autorestart == b.Autorestart &&
-		a.Stopsignal == b.Stopsignal &&
-		a.Umask == b.Umask &&
-		a.Stdout == b.Stdout &&
-		a.Stderr == b.Stderr &&
-		reflect.DeepEqual(a.Cmd, b.Cmd) &&
-		reflect.DeepEqual(a.Exitcodes, b.Exitcodes) &&
-		reflect.DeepEqual(a.Environment, b.Environment))
 }
 
 func cloneConfig(cfg Config) (ret Config, err error) {
