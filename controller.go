@@ -344,13 +344,18 @@ func (c *controller) stopProc(ps *Proc) error {
 
 	ps.Status = ProcStopping
 
-	err := syscall.Kill(ps.PID, ps.Prog.Stopsignal)
+	pid := ps.PID
+	if ps.Prog.Stopasgroup {
+		pid *= -1
+	}
+
+	err := syscall.Kill(pid, ps.Prog.Stopsignal)
 	if err != nil {
-		slog.Error("stopProc: kill error", "group", ps.Gname, "program", ps.Pname, "id", ps.ID, "pid", ps.PID)
+		slog.Error("stopProc: kill error", "group", ps.Gname, "program", ps.Pname, "id", ps.ID, "pid", pid)
 		return err
 	}
 
-	slog.Info("process stopping", "group", ps.Gname, "program", ps.Pname, "id", ps.ID, "pid", ps.PID)
+	slog.Info("process stopping", "group", ps.Gname, "program", ps.Pname, "id", ps.ID, "pid", pid)
 
 	go notify(c.ctx, c.cmdCh, procCmd{cmd: procStopCheck, pid: ps.PID}, ps.Prog.Stopwaitsecs)
 
