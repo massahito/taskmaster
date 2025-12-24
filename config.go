@@ -2,111 +2,21 @@ package taskmaster
 
 import (
 	"fmt"
-	"gopkg.in/yaml.v3"
 	"log/slog"
 	"os"
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/massahito/taskmaster/internal/config"
+	"gopkg.in/yaml.v3"
 )
 
-type YamlConfig struct {
-	Cluster map[string]YamlGroup `yaml:"cluster"`
-	Socket  YamlSocket           `yaml:"socket"`
-	Log     YamlLog              `yaml:log`
-}
-
-type YamlSocket struct {
-	Path string      `yaml:"path"`
-	Mode os.FileMode `yaml:"mode"`
-	UID  int         `yaml:"UID"`
-	GID  int         `yaml:"GID"`
-}
-
-func (s *YamlSocket) UnmarshalYAML(unmarshal func(interface{}) error) error {
-	type rawSocket YamlSocket
-	raw := rawSocket{
-		Path: "/tmp/taskmaster.sock",
-		Mode: 0660,
-		UID:  os.Getuid(),
-		GID:  os.Getgid(),
-	}
-	if err := unmarshal(&raw); err != nil {
-		return err
-	}
-
-	*s = YamlSocket(raw)
-	return nil
-}
-
-type YamlLog struct {
-	Path  string `yaml:"path"`
-	Level string `yaml:"level"`
-}
-
-type YamlGroup struct {
-	Priority uint                   `yaml:"priority"`
-	Programs map[string]YamlProgram `yaml:"programs"`
-}
-
-func (g *YamlGroup) UnmarshalYAML(unmarshal func(interface{}) error) error {
-	type rawGroup YamlGroup
-	raw := rawGroup{
-		Priority: 255,
-	}
-	if err := unmarshal(&raw); err != nil {
-		return err
-	}
-
-	*g = YamlGroup(raw)
-	return nil
-}
-
-type YamlProgram struct {
-	Cmd          []string            `yaml:"cmd"`
-	Numproc      uint8               `yaml:"numproc"`
-	Priority     uint8               `yaml:"priority"`
-	Directory    string              `yaml:"directory"`
-	Autostart    bool                `yaml:"autostart"`
-	Autorestart  string              `yaml:"autorestart"`
-	Startsecs    uint8               `yaml:"startsecs"`
-	Startretries uint8               `yaml:"startretries"`
-	Stopwaitsecs uint8               `yaml:"stopwaitsecs"`
-	Stopasgroup  bool                `yaml:"stopasgroup"`
-	Stopsignal   string              `yaml:"stopsignal"`
-	Exitcodes    []uint8             `yaml:"exitcodes"`
-	Environment  []map[string]string `yaml:"environment"`
-	Umask        int                 `yaml:"umask"`
-	Stdout       string              `yaml:"stdout"`
-	Stderr       string              `yaml:"stderr"`
-}
-
-func (p *YamlProgram) UnmarshalYAML(unmarshal func(interface{}) error) error {
-	type rawProgram YamlProgram
-	raw := rawProgram{
-		Numproc:      1,
-		Priority:     255,
-		Directory:    "/tmp",
-		Autostart:    false,
-		Autorestart:  "unexpected",
-		Startsecs:    1,
-		Startretries: 3,
-		Stopwaitsecs: 10,
-		Stopasgroup:  false,
-		Stopsignal:   "TERM",
-		Exitcodes:    []uint8{0},
-		Umask:        022,
-	}
-	if err := unmarshal(&raw); err != nil {
-		return err
-	}
-
-	*p = YamlProgram(raw)
-	return nil
-}
-
+// Parse parses a configuration file from path and create [Config].
+//
+// the configuration file specified path should be formatted in yaml.
 func Parse(path string) (Config, error) {
-	var cfg YamlConfig
+	var cfg config.YamlConfig
 
 	file, err := os.OpenFile(path, os.O_RDONLY, 0444)
 	if err != nil {
@@ -126,7 +36,7 @@ func Parse(path string) (Config, error) {
 	return parseConfig(path, cfg)
 }
 
-func parseConfig(path string, cfg YamlConfig) (Config, error) {
+func parseConfig(path string, cfg config.YamlConfig) (Config, error) {
 	socket, err := parseSocket(cfg.Socket)
 	if err != nil {
 		slog.Error("config.Parse: parseSocket", "error", err.Error())
@@ -153,7 +63,7 @@ func parseConfig(path string, cfg YamlConfig) (Config, error) {
 	}, nil
 }
 
-func parseSocket(skt YamlSocket) (Socket, error) {
+func parseSocket(skt config.YamlSocket) (Socket, error) {
 	return Socket{
 		Path: skt.Path,
 		Mode: skt.Mode,
@@ -162,7 +72,7 @@ func parseSocket(skt YamlSocket) (Socket, error) {
 	}, nil
 }
 
-func parseLog(log YamlLog) (Log, error) {
+func parseLog(log config.YamlLog) (Log, error) {
 	level, err := parseLogLevel(log.Level)
 	if err != nil {
 		return Log{}, err
@@ -195,7 +105,7 @@ func parseLogLevel(level string) (slog.Level, error) {
 	}
 }
 
-func parseCluster(grps map[string]YamlGroup) (map[string]Group, error) {
+func parseCluster(grps map[string]config.YamlGroup) (map[string]Group, error) {
 	if len(grps) == 0 {
 		return map[string]Group{}, configError("cluster must have at least one group.")
 	}
@@ -216,7 +126,7 @@ func parseCluster(grps map[string]YamlGroup) (map[string]Group, error) {
 	return ret, nil
 }
 
-func parsePrograms(progs map[string]YamlProgram) (map[string]Program, error) {
+func parsePrograms(progs map[string]config.YamlProgram) (map[string]Program, error) {
 	if len(progs) == 0 {
 		return nil, configError("group must have at least one program.")
 	}
@@ -233,7 +143,7 @@ func parsePrograms(progs map[string]YamlProgram) (map[string]Program, error) {
 	return ret, nil
 }
 
-func parseProgram(prog YamlProgram) (Program, error) {
+func parseProgram(prog config.YamlProgram) (Program, error) {
 	if len(prog.Cmd) == 0 {
 		return Program{}, configError("you have to specify at least cmd.")
 	}

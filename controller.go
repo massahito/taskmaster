@@ -20,7 +20,16 @@ const (
 	ctrlStopped
 )
 
-type controller struct {
+// Controller handles the lifecycle of configurated processes.
+//
+// This should be created from [NewController].
+//
+// [Controller.Start] will start managing process and [Controller.Shutdown] will stop it.
+//
+// [Controller.Start] and [Controller.Shutdown] should be called only once for each Controller.
+//
+// [Controller.Shutdown] shouldn't be called before calling [Controller.Start].
+type Controller struct {
 	procs  procRefs
 	cmdCh  chan procCmd
 	pubChs map[chan<- Procs]bool
@@ -30,13 +39,14 @@ type controller struct {
 	cancel context.CancelFunc
 }
 
-func NewController(cfg Config) *controller {
+// NewController creates new Controller from [Config].
+func NewController(cfg Config) *Controller {
 	ctx, cancel := context.WithCancel(context.Background())
 	procs := buildProcRefFromGroup(cfg.Cluster)
 
-	slog.Debug("new controller were created.")
+	slog.Debug("new Controller were created.")
 
-	return &controller{
+	return &Controller{
 		procs:  procs,
 		cmdCh:  make(chan procCmd, 100),
 		pubChs: map[chan<- Procs]bool{},
@@ -46,41 +56,52 @@ func NewController(cfg Config) *controller {
 	}
 }
 
-func (c *controller) Start() error {
+// Start will start managing configurated processes.
+//
+// This function and [Controller.Shutdown] should be called only once for each Controller.
+//
+// [Controller.Shutdown] shouldn't be called before calling this function.
+func (c *Controller) Start() error {
 	go c.loop()
 
 	resp := make(chan error)
 	time.Sleep(500 * time.Millisecond)
-	if err := c.SendCmd(procCmd{cmd: procAutoStart, arg: CmdArg{ID: -1}, resp: resp}); err != nil {
-		slog.Error("controller.Start", "error", err.Error())
+	if err := c.sendCmd(procCmd{cmd: procAutoStart, arg: CmdArg{ID: -1}, resp: resp}); err != nil {
+		slog.Error("Controller.Start", "error", err.Error())
 		return err
 	}
 
 	return <-resp
 }
 
-func (c *controller) Subscribe(subCh chan<- Procs) {
+// Subscribe enables subCh to receive current status of [Procs] managed by [Controller].
+//
+// This function should be used with [Controller.Unsubscribe] to delete subCh from [Controller].
+// Most of case, [Controller.Unsubscribe] will be called as defer function.
+//
+// For efficiency, this function shouldn't be called more than twice for same subCh.
+func (c *Controller) Subscribe(subCh chan<- Procs) {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 	c.pubChs[subCh] = true
 }
 
-func (c *controller) Unsubscribe(subCh chan<- Procs) {
+// Unsubscribe delete subCh added by [Controller.Subscribe] from [Controller].
+//
+// This function should be called after [Controller.Subscribe] called and most of case, will be called as defer function.
+// For efficiency, this function shouldn't be called more than twice for same subCh.
+func (c *Controller) Unsubscribe(subCh chan<- Procs) {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 	delete(c.pubChs, subCh)
 }
 
-func (c *controller) SendCmd(cmd procCmd) error {
-	select {
-	case c.cmdCh <- cmd:
-		return nil
-	default:
-		return fmt.Errorf("can't receive command.")
-	}
-}
-
-func (c *controller) Shutdown() error {
+// Stop will stop managing configurated processes.
+//
+// This function and [Controller.Start] should be called only once for each Controller.
+//
+// This function shouldn't be called before calling [Controller.Start].
+func (c *Controller) Shutdown() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
@@ -90,9 +111,9 @@ func (c *controller) Shutdown() error {
 	c.Subscribe(procsCh)
 	defer c.Unsubscribe(procsCh)
 
-	err := c.SendCmd(procCmd{cmd: procShutDown, resp: errCh, arg: CmdArg{}})
+	err := c.sendCmd(procCmd{cmd: procShutDown, resp: errCh, arg: CmdArg{}})
 	if err != nil {
-		slog.Error("controller.Shutdown", "error", err.Error())
+		slog.Error("Controller.Shutdown", "error", err.Error())
 		return err
 	}
 
@@ -100,7 +121,7 @@ func (c *controller) Shutdown() error {
 		select {
 		case err := <-errCh:
 			if err != nil {
-				slog.Error("controller.Shutdown", "error", err.Error())
+				slog.Error("Controller.Shutdown", "error", err.Error())
 				return err
 			}
 		case resp := <-procsCh:
@@ -114,9 +135,18 @@ func (c *controller) Shutdown() error {
 	}
 }
 
+func (c *Controller) sendCmd(cmd procCmd) error {
+	select {
+	case c.cmdCh <- cmd:
+		return nil
+	default:
+		return fmt.Errorf("can't receive command.")
+	}
+}
+
 // Possibly hanging if one of receivers is either not ready to receive,
 // its channel is full, or exiting without calling Unsubscribe.
-func (c *controller) publish() {
+func (c *Controller) publish() {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 
@@ -132,7 +162,7 @@ func (c *controller) publish() {
 }
 
 // start proc
-func (c *controller) startByCmd(arg CmdArg) error {
+func (c *Controller) startByCmd(arg CmdArg) error {
 	if isGeneralCmd(arg) {
 		return c.startAllProcs()
 	} else if isGroupCmd(arg) {
@@ -146,7 +176,7 @@ func (c *controller) startByCmd(arg CmdArg) error {
 	return fmt.Errorf("can't find command args type")
 }
 
-func (c *controller) startAutoProcs(arg CmdArg) error {
+func (c *Controller) startAutoProcs(arg CmdArg) error {
 	for _, ps := range c.procs {
 		if arg.Gname != "" && ps.Gname != arg.Gname {
 			continue
@@ -166,14 +196,14 @@ func (c *controller) startAutoProcs(arg CmdArg) error {
 	return nil
 }
 
-func (c *controller) startAllProcs() error {
+func (c *Controller) startAllProcs() error {
 	for _, ps := range c.procs {
 		c.startProc(ps)
 	}
 	return nil
 }
 
-func (c *controller) startGroupProcs(gname string) error {
+func (c *Controller) startGroupProcs(gname string) error {
 	procs := c.procs.filterByGroup(gname)
 	if len(procs) == 0 {
 		slog.Error("startGroupProcs", "error", "receive start request for non-existent group", "group", gname)
@@ -185,7 +215,7 @@ func (c *controller) startGroupProcs(gname string) error {
 	return nil
 }
 
-func (c *controller) startProgProcs(gname, pname string) error {
+func (c *Controller) startProgProcs(gname, pname string) error {
 	procs := c.procs.filterByProg(gname, pname)
 	if len(procs) == 0 {
 		slog.Error("startProgProcs", "error", "receive start request for non-existent program", "group", gname, "program", pname)
@@ -197,7 +227,7 @@ func (c *controller) startProgProcs(gname, pname string) error {
 	return nil
 }
 
-func (c *controller) startIDProc(gname, pname string, id uint8) error {
+func (c *Controller) startIDProc(gname, pname string, id uint8) error {
 	ps := c.procs.filterByID(gname, pname, id)
 	if ps == nil {
 		slog.Error("startIDProc", "error", "receive start request for non-existent process", "group", gname, "program", pname, "id", id)
@@ -207,7 +237,7 @@ func (c *controller) startIDProc(gname, pname string, id uint8) error {
 	return c.startProc(ps)
 }
 
-func (c *controller) startProc(ps procRef) error {
+func (c *Controller) startProc(ps procRef) error {
 
 	if !ps.Status.IsStartable() {
 		slog.Debug("startProc: process not startable", "group", ps.Gname, "program", ps.Pname, "id", ps.ID)
@@ -287,7 +317,7 @@ func (c *controller) startProc(ps procRef) error {
 }
 
 // stop proc
-func (c *controller) stopByCmd(arg CmdArg) error {
+func (c *Controller) stopByCmd(arg CmdArg) error {
 	if isGeneralCmd(arg) {
 		return c.stopAllProcs()
 	} else if isGroupCmd(arg) {
@@ -301,14 +331,14 @@ func (c *controller) stopByCmd(arg CmdArg) error {
 	return fmt.Errorf("can't find command args type")
 }
 
-func (c *controller) stopAllProcs() error {
+func (c *Controller) stopAllProcs() error {
 	for _, ps := range c.procs {
 		c.stopProc(ps)
 	}
 	return nil
 }
 
-func (c *controller) stopGroupProcs(gname string) error {
+func (c *Controller) stopGroupProcs(gname string) error {
 	procs := c.procs.filterByGroup(gname)
 	for _, ps := range procs {
 		c.stopProc(ps)
@@ -316,7 +346,7 @@ func (c *controller) stopGroupProcs(gname string) error {
 	return nil
 }
 
-func (c *controller) stopProgProcs(gname, pname string) error {
+func (c *Controller) stopProgProcs(gname, pname string) error {
 	procs := c.procs.filterByProg(gname, pname)
 	for _, ps := range procs {
 		c.stopProc(ps)
@@ -324,12 +354,12 @@ func (c *controller) stopProgProcs(gname, pname string) error {
 	return nil
 }
 
-func (c *controller) stopIDProc(gname, pname string, id uint8) error {
+func (c *Controller) stopIDProc(gname, pname string, id uint8) error {
 	ps := c.procs.filterByID(gname, pname, id)
 	return c.stopProc(ps)
 }
 
-func (c *controller) stopProc(ps *Proc) error {
+func (c *Controller) stopProc(ps *Proc) error {
 
 	if !ps.Status.IsStoppable() {
 		if ps.Status == ProcBackoff {
@@ -362,7 +392,7 @@ func (c *controller) stopProc(ps *Proc) error {
 	return nil
 }
 
-func (c *controller) loop() {
+func (c *Controller) loop() {
 	defer c.cancel()
 
 	c.status = ctrlRunning
@@ -371,7 +401,7 @@ func (c *controller) loop() {
 		if c.status == ctrlStopped && c.procs.Procs().IsAllProcDead() {
 			time.Sleep(time.Second * 1)
 			c.publish()
-			slog.Info("shutdown controller complete")
+			slog.Info("shutdown Controller complete")
 			return
 		}
 
@@ -384,7 +414,7 @@ func (c *controller) loop() {
 // Possibly hanging if psch.resp is either not ready to receive,
 // its channel is full, or exiting without calling Unsubscribe.
 // TODO deny user request when shutdown
-func (c *controller) handleCmd(psch procCmd) {
+func (c *Controller) handleCmd(psch procCmd) {
 	switch psch.cmd {
 	case procAutoStart:
 		psch.resp <- c.startAutoProcs(psch.arg)
@@ -415,7 +445,7 @@ func (c *controller) handleCmd(psch procCmd) {
 	}
 }
 
-func (c *controller) createProc(arg CmdArg, cfg Config) error {
+func (c *Controller) createProc(arg CmdArg, cfg Config) error {
 
 	for gname, group := range cfg.Cluster {
 		if arg.Gname != "" && arg.Gname != gname {
@@ -429,7 +459,7 @@ func (c *controller) createProc(arg CmdArg, cfg Config) error {
 	return nil
 }
 
-func (c *controller) deleteProc(arg CmdArg) error {
+func (c *Controller) deleteProc(arg CmdArg) error {
 	procs := procRefs{}
 
 	for _, ps := range c.procs {
@@ -445,7 +475,7 @@ func (c *controller) deleteProc(arg CmdArg) error {
 	return nil
 }
 
-func (c *controller) handleExit(exitState os.ProcessState) {
+func (c *Controller) handleExit(exitState os.ProcessState) {
 	ps := c.procs.searchByPID(exitState.Pid())
 
 	if ps == nil {
@@ -505,7 +535,7 @@ func (c *controller) handleExit(exitState os.ProcessState) {
 	}
 }
 
-func (c *controller) handleStartCheck(psch procCmd) {
+func (c *Controller) handleStartCheck(psch procCmd) {
 	ps := c.procs.searchByPID(psch.pid)
 
 	// It's possible when stopping process right after starting.
@@ -552,7 +582,7 @@ func (c *controller) handleStartCheck(psch procCmd) {
 	}
 }
 
-func (c *controller) handleStopCheck(psch procCmd) {
+func (c *Controller) handleStopCheck(psch procCmd) {
 	ps := c.procs.searchByPID(psch.pid)
 	// it's natural to be nil when process is stopped normally
 	if ps == nil {
@@ -595,7 +625,7 @@ func (c *controller) handleStopCheck(psch procCmd) {
 
 }
 
-func (c *controller) handleProcFail(psch procCmd) {
+func (c *Controller) handleProcFail(psch procCmd) {
 	ps := c.procs.filterByID(psch.arg.Gname, psch.arg.Pname, uint8(psch.arg.ID))
 
 	if ps == nil {

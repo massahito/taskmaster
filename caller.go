@@ -8,7 +8,7 @@ import (
 )
 
 type caller struct {
-	ctrl *controller
+	ctrl *Controller
 }
 
 func (c *caller) status(req *CmdArg, resp *Procs) error {
@@ -21,7 +21,7 @@ func (c *caller) status(req *CmdArg, resp *Procs) error {
 	c.ctrl.Subscribe(procsCh)
 	defer c.ctrl.Unsubscribe(procsCh)
 
-	err := c.ctrl.SendCmd(procCmd{cmd: procGetStatus, resp: errCh, arg: *req})
+	err := c.ctrl.sendCmd(procCmd{cmd: procGetStatus, resp: errCh, arg: *req})
 	if err != nil {
 		return err
 	}
@@ -54,7 +54,7 @@ func (c *caller) start(req *CmdArg, resp *Procs) error {
 	c.ctrl.Subscribe(procsCh)
 	defer c.ctrl.Unsubscribe(procsCh)
 
-	err := c.ctrl.SendCmd(procCmd{cmd: procStart, resp: errCh, arg: *req})
+	err := c.ctrl.sendCmd(procCmd{cmd: procStart, resp: errCh, arg: *req})
 	if err != nil {
 		slog.Error("caller.start", "error", err.Error())
 		return err
@@ -90,7 +90,7 @@ func (c *caller) stop(req *CmdArg, resp *Procs) error {
 	c.ctrl.Subscribe(procsCh)
 	defer c.ctrl.Unsubscribe(procsCh)
 
-	err := c.ctrl.SendCmd(procCmd{cmd: procStop, resp: errCh, arg: *req})
+	err := c.ctrl.sendCmd(procCmd{cmd: procStop, resp: errCh, arg: *req})
 	if err != nil {
 		slog.Error("caller.stop", "error", err.Error())
 		return err
@@ -126,7 +126,7 @@ func (c *caller) halt(req *CmdArg, resp *Procs) error {
 	c.ctrl.Subscribe(procsCh)
 	defer c.ctrl.Unsubscribe(procsCh)
 
-	err := c.ctrl.SendCmd(procCmd{cmd: procStop, resp: errCh, arg: *req})
+	err := c.ctrl.sendCmd(procCmd{cmd: procStop, resp: errCh, arg: *req})
 	if err != nil {
 		slog.Error("caller.halt", "error", err.Error())
 		return err
@@ -225,7 +225,7 @@ func (c *caller) createProc(cfg Config, req *CmdArg, resp *Procs) error {
 	c.ctrl.Subscribe(procsCh)
 	defer c.ctrl.Unsubscribe(procsCh)
 
-	err := c.ctrl.SendCmd(procCmd{cmd: procCreate, resp: errCh, arg: *req, cfg: cfg})
+	err := c.ctrl.sendCmd(procCmd{cmd: procCreate, resp: errCh, arg: *req, cfg: cfg})
 	if err != nil {
 		slog.Error("caller.createProc", "error", err.Error())
 		return err
@@ -259,7 +259,7 @@ func (c *caller) deleteProc(req *CmdArg, resp *Procs) error {
 	c.ctrl.Subscribe(procsCh)
 	defer c.ctrl.Unsubscribe(procsCh)
 
-	err := c.ctrl.SendCmd(procCmd{cmd: procDelete, resp: errCh, arg: *req})
+	err := c.ctrl.sendCmd(procCmd{cmd: procDelete, resp: errCh, arg: *req})
 	if err != nil {
 		slog.Error("caller.deleteProc", "error", err.Error())
 		return err
@@ -293,7 +293,7 @@ func (c *caller) autoStart(req *CmdArg, resp *Procs) error {
 	c.ctrl.Subscribe(procsCh)
 	defer c.ctrl.Unsubscribe(procsCh)
 
-	err := c.ctrl.SendCmd(procCmd{cmd: procAutoStart, resp: errCh, arg: *req})
+	err := c.ctrl.sendCmd(procCmd{cmd: procAutoStart, resp: errCh, arg: *req})
 	if err != nil {
 		slog.Error("caller.autoStart", "error", err.Error())
 		return err
