@@ -14,7 +14,7 @@ type TaskCmd struct {
 	isBusyMutex sync.Mutex
 }
 
-func NewTaskCmd(cfg Config, ctrl *controller) *TaskCmd {
+func NewTaskCmd(cfg Config, ctrl *Controller) *TaskCmd {
 	return &TaskCmd{
 		caller: &caller{ctrl: ctrl},
 		cfg:    cfg,
