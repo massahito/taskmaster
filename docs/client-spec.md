@@ -2,31 +2,31 @@
 
 ## Terminology
 
-- `TaskClient`: the client-side process/program for taskmaster. The target of this spec.
-- `TaskServer`: the server-side process/program for taskmaster.
-- `Cluster`: The group of several `Group`s. Can be specified in configuration.
-- `Group:` The group of several `Program`s. Can be specified in Cluster's value as associative array in configuration.
-- `Program`: The details of execution. Can be specified in `Group`'s value as associative array in configuration.
-- `Process`: The unit of execution. created the same number of `Numproc` in configuration for each `Program`.
+- `TaskClient`: client-side process/program for taskmaster. The target of this spec.
+- `TaskServer`: server-side process/program for taskmaster.
+- `Cluster`: group of several `Group`s. Can be specified in configuration.
+- `Group:` group of several `Program`s. Can be specified in Cluster's value as associative array in configuration.
+- `Program`: details of execution. Can be specified in `Group`'s value as associative array in configuration.
+- `Process`: unit of execution. created the same number of `Numproc` in configuration for each `Program`.
 - `Gname`: `Group`'s name.
 - `Pname`: `Program`'s name.
-- `Id`: `Process`'s id.
-- `Pid`: process id in unix meaning.
+- `ID`: `Process`'s ID.
+- `PID`: OS process ID in unix meaning.
 
 ## Basic requirements
 
-- The binary should be in `client/taskclient`.
+- The binary should be in `client/taskclient`
 
 - TaskClient must:
 
-  - have shell-like/REPL interface.
-  - accept user's command.
-  - output the results of user's command.
-  - communicate TaskServer via RPC protocol or Signal.
+  - have shell-like/REPL interface
+  - accept user's command
+  - output the results of user's command
+  - communicate TaskServer via RPC protocol or Signal
 
 - TaskClient must be able to:
-  - take the configuration from command line option `-c`.
-  - determine the UNIX socket path which is used to communicate TaskServer from passed configuration.
+  - take the configuration from command line option `-c`
+  - determine the UNIX socket path which is used to communicate TaskServer from passed configuration
 
 ## Command syntax
 
@@ -36,9 +36,9 @@ This is an EBNF of command line syntax.
 
 ```
 command      = proc-command, " ", scope | serv-command;
-proc-command = "status" | "start" | "stop" | "restart";
+proc-command = "status" | "start" | "stop" | "restart" | "update";
 serv-command = "reload" | "shutdown";
-scope        = Gname, [":", Pname, [":", Id]] | "all";
+scope        = Gname, [":", Pname, [":", ID]] | "all";
 ```
 
 ## Command Semantics
@@ -47,17 +47,17 @@ TaskClient must communicate TaskServer via RPC protocol or Signal to execute use
 
 The set of method TaskClient should call is in [cmd.go](https://github.com/massahito/taskmaster/blob/main/cmd.go) of `taskmaster` module.
 
-`serv-command` may use [CmdArg](https://github.com/massahito/taskmaster/blob/1da2d4ba1dbc4b022f1455c8a57663df02b4a355/cmd.go#L23-L27) for specifying the command scope.
+`serv-command` may use [CmdArg](https://github.com/massahito/taskmaster/blob/dff96770bde87c8a0f48e8bf39eba0e50cc94ace/cmd.go#L32-L53) for specifying the command scope.
 
 `CmdArg` should be set:
 
-- `Gname` and `Pname` are empty string, and `Id` is negative for "all" scope. 
-- `Gname` is set, `Pname` are empty string, and `Id` is negative for `Group` scope. 
-- `Gname` and `Pname` are set, and `Id` is negative for `Program` scope. 
-- `Gname` and `Pname` are set, and `Id` is non-negative for `Process` scope.
+- `Gname` and `Pname` are empty string, and `ID` is negative for "all" scope
+- `Gname` is set, `Pname` are empty string, and `ID` is negative for `Group` scope
+- `Gname` and `Pname` are set, and `ID` is negative for `Program` scope
+- `Gname` and `Pname` are set, and `ID` is non-negative for `Process` scope
 
 ```
-Scope     Syntax example              CmdArg (Gname, Pname, Id)
+Scope     Syntax example              CmdArg (Gname, Pname, ID)
 ---------------------------------------------------------------
 all       status all                                ("", "", -1)
 group     status groupname                          ("groupname", "", -1)
@@ -67,38 +67,44 @@ process   status groupname:programname:0            ("groupname", "programname",
 
 - status
 
-  - must call [TaskCmd.Status](https://github.com/massahito/taskmaster/blob/1da2d4ba1dbc4b022f1455c8a57663df02b4a355/cmd.go#L153).
-  - CmdArg must be set properly.
-  - status MUST output the status lines for all processes matching the requested scope, scoped client-side.
+  - must call [TaskCmd.Status](https://github.com/massahito/taskmaster/blob/dff96770bde87c8a0f48e8bf39eba0e50cc94ace/cmd.go#L178-L192)
+  - CmdArg must be set properly
+  - status must output the status lines for all processes matching the requested scope, scoped client-side
 
 - start
 
-  - must call [TaskCmd.Start](https://github.com/massahito/taskmaster/blob/1da2d4ba1dbc4b022f1455c8a57663df02b4a355/cmd.go#L83).
-  - CmdArg must be set properly.
-  - status MUST output the status lines for all processes matching the requested scope, scoped client-side.
+  - must call [TaskCmd.Start](https://github.com/massahito/taskmaster/blob/dff96770bde87c8a0f48e8bf39eba0e50cc94ace/cmd.go#L124-L138)
+  - CmdArg must be set properly
+  - status must output the status lines for all processes matching the requested scope, scoped client-side
 
 - stop
 
-  - must call [TaskCmd.Stop](https://github.com/massahito/taskmaster/blob/1da2d4ba1dbc4b022f1455c8a57663df02b4a355/cmd.go#L118).
-  - CmdArg must be set properly.
-  - status MUST output the status lines for all processes matching the requested scope, scoped client-side.
+  - must call [TaskCmd.Stop](https://github.com/massahito/taskmaster/blob/dff96770bde87c8a0f48e8bf39eba0e50cc94ace/cmd.go#L140-L154)
+  - CmdArg must be set properly
+  - status must output the status lines for all processes matching the requested scope, scoped client-side
 
 - restart
 
-  - must call [TaskCmd.Restart](https://github.com/massahito/taskmaster/blob/4c3465b7b7d11cdbe2bd82f2302ccc0e707b8152/cmd.go#L153).
-  - CmdArg must be set properly.
-  - status MUST output the status lines for all processes matching the requested scope, scoped client-side.
+  - must call [TaskCmd.Restart](https://github.com/massahito/taskmaster/blob/dff96770bde87c8a0f48e8bf39eba0e50cc94ace/cmd.go#L156-L176)
+  - CmdArg must be set properly
+  - status must output the status lines for all processes matching the requested scope, scoped client-side
+
+- update
+
+  - must call [TaskCmd.Update](https://github.com/massahito/taskmaster/blob/dff96770bde87c8a0f48e8bf39eba0e50cc94ace/cmd.go#L194-L235)
+  - CmdArg must be set properly
+  - status must output the status lines for all processes matching the requested scope, scoped client-side
 
 - reload
 
-  - must call [TaskCmd.Pid](https://github.com/massahito/taskmaster/blob/1da2d4ba1dbc4b022f1455c8a57663df02b4a355/cmd.go#L78) to get TaskServer's process id.
-  - must send `SIGHUP` signal to TaskServer's process id.
-  - must output nothing.
+  - must call [TaskCmd.Pid](https://github.com/massahito/taskmaster/blob/dff96770bde87c8a0f48e8bf39eba0e50cc94ace/cmd.go#L108-L122) to get TaskServer's process id
+  - must send `SIGHUP` signal to TaskServer's process id
+  - must output nothing
 
 - shutdown
-  - must call [TaskCmd.Pid](https://github.com/massahito/taskmaster/blob/1da2d4ba1dbc4b022f1455c8a57663df02b4a355/cmd.go#L78) to get TaskServer's process id.
-  - must send `SIGTERM` signal to TaskServer's process id.
-  - must output nothing.
+  - must call [TaskCmd.Pid](https://github.com/massahito/taskmaster/blob/dff96770bde87c8a0f48e8bf39eba0e50cc94ace/cmd.go#L108-L122) to get TaskServer's process id
+  - must send `SIGTERM` signal to TaskServer's process id
+  - must output nothing
 
 ## Output format
 
@@ -108,10 +114,10 @@ process   status groupname:programname:0            ("groupname", "programname",
 
 At least, `proc-command` should output: 
 
-- [`Gname`, `Pname`, `Id`](https://github.com/massahito/taskmaster/blob/1da2d4ba1dbc4b022f1455c8a57663df02b4a355/proc.go#L12-L14) in some format. 
-- [Status](https://github.com/massahito/taskmaster/blob/1da2d4ba1dbc4b022f1455c8a57663df02b4a355/proc.go#L17) of `Process` 
-- [Pid](https://github.com/massahito/taskmaster/blob/1da2d4ba1dbc4b022f1455c8a57663df02b4a355/proc.go#L10) of `Process`. 
-- Execution time.
+- [`Gname`, `Pname`, `ID`](https://github.com/massahito/taskmaster/blob/dff96770bde87c8a0f48e8bf39eba0e50cc94ace/proc.go#L77-L83) in some format
+- [Status](https://github.com/massahito/taskmaster/blob/dff96770bde87c8a0f48e8bf39eba0e50cc94ace/proc.go#L92) of `Process`
+- [Pid](https://github.com/massahito/taskmaster/blob/dff96770bde87c8a0f48e8bf39eba0e50cc94ace/proc.go#L98) of `Process`
+- Execution time
 
 Examle of output
 
