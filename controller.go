@@ -20,6 +20,15 @@ const (
 	ctrlStopped
 )
 
+// Controller handles the lifecycle of configurated processes.
+//
+// This should be created from [NewController].
+//
+// [Controller.Start] will start managing process and [Controller.Shutdown] will stop it.
+//
+// [Controller.Start] and [Controller.Shutdown] should be called only once for each Controller.
+//
+// [Controller.Shutdown] shouldn't be called before calling [Controller.Start].
 type Controller struct {
 	procs  procRefs
 	cmdCh  chan procCmd
@@ -30,6 +39,7 @@ type Controller struct {
 	cancel context.CancelFunc
 }
 
+// NewController creates new Controller from [Config].
 func NewController(cfg Config) *Controller {
 	ctx, cancel := context.WithCancel(context.Background())
 	procs := buildProcRefFromGroup(cfg.Cluster)
@@ -46,6 +56,11 @@ func NewController(cfg Config) *Controller {
 	}
 }
 
+// Start will start managing configurated processes.
+//
+// This function and [Controller.Shutdown] should be called only once for each Controller.
+//
+// [Controller.Shutdown] shouldn't be called before calling this function.
 func (c *Controller) Start() error {
 	go c.loop()
 
@@ -59,27 +74,33 @@ func (c *Controller) Start() error {
 	return <-resp
 }
 
+// Subscribe enables subCh to receive current status of [Procs] managed by [Controller].
+//
+// This function should be used with [Controller.Unsubscribe] to delete subCh from [Controller].
+// Most of case, [Controller.Unsubscribe] will be called as defer function.
+//
+// For efficiency, this function shouldn't be called more than twice for same subCh.
 func (c *Controller) Subscribe(subCh chan<- Procs) {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 	c.pubChs[subCh] = true
 }
 
+// Unsubscribe delete subCh added by [Controller.Subscribe] from [Controller].
+//
+// This function should be called after [Controller.Subscribe] called and most of case, will be called as defer function.
+// For efficiency, this function shouldn't be called more than twice for same subCh.
 func (c *Controller) Unsubscribe(subCh chan<- Procs) {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 	delete(c.pubChs, subCh)
 }
 
-func (c *Controller) sendCmd(cmd procCmd) error {
-	select {
-	case c.cmdCh <- cmd:
-		return nil
-	default:
-		return fmt.Errorf("can't receive command.")
-	}
-}
-
+// Stop will stop managing configurated processes.
+//
+// This function and [Controller.Start] should be called only once for each Controller.
+//
+// This function shouldn't be called before calling [Controller.Start].
 func (c *Controller) Shutdown() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -111,6 +132,15 @@ func (c *Controller) Shutdown() error {
 			slog.Warn("fail to stop gracefully")
 			return fmt.Errorf("fail to stop gracefully")
 		}
+	}
+}
+
+func (c *Controller) sendCmd(cmd procCmd) error {
+	select {
+	case c.cmdCh <- cmd:
+		return nil
+	default:
+		return fmt.Errorf("can't receive command.")
 	}
 }
 

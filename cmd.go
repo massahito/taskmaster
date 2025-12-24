@@ -6,6 +6,12 @@ import (
 	"sync"
 )
 
+// TaskCmd provides an interface for interacting with a Controller.
+//
+// It is typically exposed as a net/rpc object.
+//
+// The associated Controller must be started via Controller.Start
+// before any TaskCmd methods are called.
 type TaskCmd struct {
 	caller      *caller
 	cfg         Config
@@ -14,6 +20,7 @@ type TaskCmd struct {
 	isBusyMutex sync.Mutex
 }
 
+// NewTaskCmd returns a new TaskCmd instance bound to the given Controller.
 func NewTaskCmd(cfg Config, ctrl *Controller) *TaskCmd {
 	return &TaskCmd{
 		caller: &caller{ctrl: ctrl},
@@ -22,10 +29,27 @@ func NewTaskCmd(cfg Config, ctrl *Controller) *TaskCmd {
 	}
 }
 
+// CmdArg selects the target of a TaskCmd operation.
+//
+// A CmdArg may target all processes, a group, a program, or a single process
+// instance, depending on which fields are set.
+//
+// Selection rules:
+//   - All processes:   Gname == "", Pname == "", ID < 0
+//   - A group:         Gname != "", Pname == "", ID < 0
+//   - A program:       Gname != "", Pname != "", ID < 0
+//   - A process:       Gname != "", Pname != "", ID >= 0 (instance index)
+//
+// By convention, ID < 0 means "all instances".
 type CmdArg struct {
+	// Gname is the group name. An empty string matches all groups.
 	Gname string
+
+	// Pname is the program name within the group. An empty string matches all programs.
 	Pname string
-	ID    int
+
+	// ID selects a specific process instance. A negative value matches all instances.
+	ID int
 }
 
 func isGeneralCmd(arg CmdArg) bool {
@@ -81,6 +105,10 @@ type procCmd struct {
 	resp  chan<- error
 }
 
+// Pid returns the PID of the TaskCmd process.
+//
+// It is intended for net/rpc clients. The req argument is ignored.
+// If another exclusive operation is in progress, Pid returns an error.
 func (t *TaskCmd) Pid(_ *CmdArg, pid *int) error {
 	t.isBusyMutex.Lock()
 	if t.isBusy {
@@ -93,6 +121,11 @@ func (t *TaskCmd) Pid(_ *CmdArg, pid *int) error {
 	return nil
 }
 
+// Start starts the processes selected by req and stores the resulting
+// process snapshot in resp.
+//
+// If the TaskCmd is busy, Start returns an error.
+// Selection rules are defined by CmdArg.
 func (t *TaskCmd) Start(req *CmdArg, resp *Procs) error {
 	t.isBusyMutex.Lock()
 	if t.isBusy {
@@ -104,6 +137,11 @@ func (t *TaskCmd) Start(req *CmdArg, resp *Procs) error {
 	return t.caller.start(req, resp)
 }
 
+// Stop stops the processes selected by req and stores the resulting
+// process snapshot in resp.
+//
+// If the TaskCmd is busy, Stop returns an error.
+// Selection rules are defined by CmdArg.
 func (t *TaskCmd) Stop(req *CmdArg, resp *Procs) error {
 	t.isBusyMutex.Lock()
 	if t.isBusy {
@@ -115,6 +153,13 @@ func (t *TaskCmd) Stop(req *CmdArg, resp *Procs) error {
 	return t.caller.stop(req, resp)
 }
 
+// Restart stops and then starts the processes selected by req, storing the
+// resulting process snapshot in resp.
+//
+// If stopping fails, Restart returns that error and does not attempt to start.
+//
+// If the TaskCmd is busy, Restart returns an error.
+// Selection rules are defined by CmdArg.
 func (t *TaskCmd) Restart(req *CmdArg, resp *Procs) error {
 	t.isBusyMutex.Lock()
 	if t.isBusy {
@@ -130,6 +175,11 @@ func (t *TaskCmd) Restart(req *CmdArg, resp *Procs) error {
 	return t.caller.start(req, resp)
 }
 
+// Status reports the current status of processes selected by req and stores a
+// snapshot in resp.
+//
+// If the TaskCmd is busy, Status returns an error.
+// Selection rules are defined by CmdArg.
 func (t *TaskCmd) Status(req *CmdArg, resp *Procs) error {
 	t.isBusyMutex.Lock()
 	if t.isBusy {
@@ -141,6 +191,13 @@ func (t *TaskCmd) Status(req *CmdArg, resp *Procs) error {
 	return t.caller.status(req, resp)
 }
 
+// Update reloads the configuration from the config file and applies it to the
+// Controller, scoped by req, storing a resulting process snapshot in resp.
+//
+// Update is an exclusive operation: while it runs, other TaskCmd methods
+// return an error indicating the server is busy.
+//
+// Selection rules are defined by CmdArg.
 func (t *TaskCmd) Update(req *CmdArg, resp *Procs) error {
 	t.isBusyMutex.Lock()
 	if t.isBusy {
@@ -178,7 +235,7 @@ func (t *TaskCmd) Update(req *CmdArg, resp *Procs) error {
 }
 
 func updateConfig(oldCfg, newCfg Config, arg *CmdArg) (Config, error) {
-	dst, err := cloneConfig(oldCfg)
+	dst, err := oldCfg.Clone()
 	if err != nil {
 		return oldCfg, err
 	}

@@ -12,6 +12,9 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// Parse parses a configuration file from path and create [Config].
+//
+// the configuration file specified path should be formatted in yaml.
 func Parse(path string) (Config, error) {
 	var cfg config.YamlConfig
 
