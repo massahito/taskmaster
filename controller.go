@@ -9,6 +9,7 @@ import (
 	"os"
 	"slices"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 )
@@ -33,7 +34,7 @@ type Controller struct {
 	procs  procRefs
 	cmdCh  chan procCmd
 	pubChs map[chan<- Procs]bool
-	status ctrlStatus
+	status atomic.Value
 	mutex  sync.Mutex
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -46,14 +47,16 @@ func NewController(cfg Config) *Controller {
 
 	slog.Debug("new Controller were created.")
 
-	return &Controller{
+	c := &Controller{
 		procs:  procs,
 		cmdCh:  make(chan procCmd, 100),
 		pubChs: map[chan<- Procs]bool{},
-		status: ctrlStopped,
 		ctx:    ctx,
 		cancel: cancel,
 	}
+	c.status.Store(ctrlStopped)
+
+	return c
 }
 
 // Start will start managing configurated processes.
@@ -62,6 +65,11 @@ func NewController(cfg Config) *Controller {
 //
 // [Controller.Shutdown] shouldn't be called before calling this function.
 func (c *Controller) Start() error {
+	if c.status.CompareAndSwap(ctrlRunning, ctrlRunning) {
+		slog.Error("Controller.Start: this Controller has already started")
+		return fmt.Errorf("Controller.Start: this Controller has already started")
+	}
+
 	go c.loop()
 
 	resp := make(chan error)
@@ -102,6 +110,11 @@ func (c *Controller) Unsubscribe(subCh chan<- Procs) {
 //
 // This function shouldn't be called before calling [Controller.Start].
 func (c *Controller) Shutdown() error {
+	if c.status.CompareAndSwap(ctrlStopped, ctrlStopped) {
+		slog.Error("Controller.Shutdown: this Controller has already stopped")
+		return fmt.Errorf("Controller.Shutdown: this Controller has already stopped")
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
@@ -395,10 +408,10 @@ func (c *Controller) stopProc(ps *Proc) error {
 func (c *Controller) loop() {
 	defer c.cancel()
 
-	c.status = ctrlRunning
+	c.status.Store(ctrlRunning)
 
 	for {
-		if c.status == ctrlStopped && c.procs.Procs().IsAllProcDead() {
+		if c.status.Load() == ctrlStopped && c.procs.Procs().IsAllProcDead() {
 			time.Sleep(time.Second * 1)
 			c.publish()
 			slog.Info("shutdown Controller complete")
@@ -426,7 +439,7 @@ func (c *Controller) handleCmd(psch procCmd) {
 		psch.resp <- nil
 	case procShutDown:
 		slog.Info("receive shutdown command")
-		c.status = ctrlStopped
+		c.status.Store(ctrlStopped)
 		psch.resp <- c.stopAllProcs()
 	case procCreate:
 		psch.resp <- c.createProc(psch.arg, psch.cfg)
