@@ -1,6 +1,7 @@
 package taskmaster
 
 import (
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -79,6 +80,9 @@ type Proc struct {
 	// Pname is Program name of this process.
 	Pname string
 
+	// Priority orders groups during startup. Lower values start first.
+	Priority uint8
+
 	// ID is the instance index within the program
 	ID uint8
 
@@ -153,6 +157,17 @@ func (p procRefs) Procs() (ret Procs) {
 	return ret
 }
 
+func (p procRefs) Len() int { return len(p) }
+
+func (p procRefs) Swap(i, j int) { p[i], p[j] = p[j], p[i] }
+
+func (p procRefs) Less(i, j int) bool {
+	if p[i].Priority != p[j].Priority {
+		return p[i].Priority < p[j].Priority
+	}
+	return p[i].Prog.Priority < p[j].Prog.Priority
+}
+
 func (p procRefs) searchByPID(pid int) procRef {
 	for _, proc := range p {
 		if proc.PID == pid {
@@ -199,14 +214,15 @@ func buildProcRefFromGroup(groups map[string]Group) (procs procRefs) {
 
 	for gname, group := range groups {
 		for pname, prog := range group.Progs {
-			procs = append(procs, buildProcRef(gname, pname, prog)...)
+			procs = append(procs, buildProcRef(gname, pname, group.Priority, prog)...)
 		}
 	}
 
+	sort.Sort(procRefs(procs))
 	return
 }
 
-func buildProcRef(gname, pname string, prog Program) (procs procRefs) {
+func buildProcRef(gname, pname string, priority uint8, prog Program) (procs procRefs) {
 	Stdout := prog.Stdout
 	Stderr := prog.Stderr
 	for i := uint8(0); i < prog.Numproc; i++ {
@@ -217,17 +233,19 @@ func buildProcRef(gname, pname string, prog Program) (procs procRefs) {
 			Stderr = replaceUint(prog.Stderr, "(%d)", i)
 		}
 		p := &Proc{
-			PID:    0,
-			Retry:  0,
-			Gname:  gname,
-			Pname:  pname,
-			ID:     i,
-			Status: ProcStopped,
-			Prog:   prog,
-			Stdout: Stdout,
-			Stderr: Stderr,
+			PID:      0,
+			Retry:    0,
+			Gname:    gname,
+			Pname:    pname,
+			Priority: priority,
+			ID:       i,
+			Status:   ProcStopped,
+			Prog:     prog,
+			Stdout:   Stdout,
+			Stderr:   Stderr,
 		}
 		procs = append(procs, p)
 	}
+
 	return
 }

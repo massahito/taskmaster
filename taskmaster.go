@@ -60,7 +60,7 @@ type Socket struct {
 // Group groups Programs and defines their startup priority relative to other groups.
 type Group struct {
 	// Priority orders groups during startup. Lower values start first.
-	Priority uint
+	Priority uint8
 
 	// Progs maps program names to their Program configuration.
 	Progs map[string]Program
