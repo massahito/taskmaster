@@ -148,6 +148,9 @@ func (c *Controller) Shutdown() error {
 	}
 }
 
+// sendCmd sends procCmd to loop via own channel.
+// To communicate with Controller from outside,
+// this function should be used.
 func (c *Controller) sendCmd(cmd procCmd) error {
 	select {
 	case c.cmdCh <- cmd:
@@ -157,8 +160,10 @@ func (c *Controller) sendCmd(cmd procCmd) error {
 	}
 }
 
-// Possibly hanging if one of receivers is either not ready to receive,
-// its channel is full, or exiting without calling Unsubscribe.
+// publish publishs the snapshot of Controller.procs
+// to subscribed channel.
+// If channel's buffer is either full or not ready,
+// it will skip sending the snapshot.
 func (c *Controller) publish() {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
@@ -174,7 +179,10 @@ func (c *Controller) publish() {
 	}
 }
 
-// start proc
+// startByCmd determines the scope of starting procRefs from arg.
+// Although this function itself doesn't change any fields,
+// calling functions inside this function may chage it.
+// Thus, intended to be used in Controller.handleCmd function.
 func (c *Controller) startByCmd(arg CmdArg) error {
 	if isGeneralCmd(arg) {
 		return c.startAllProcs()
@@ -189,6 +197,10 @@ func (c *Controller) startByCmd(arg CmdArg) error {
 	return fmt.Errorf("can't find command args type")
 }
 
+// startByCmd tries to start arg scoped and Autostart marked procRefs.
+// Although this function itself doesn't change any fields,
+// calling functions inside this function may chage it.
+// Thus, intended to be used in Controller.handleCmd function.
 func (c *Controller) startAutoProcs(arg CmdArg) error {
 	for _, ps := range c.procs {
 		if arg.Gname != "" && ps.Gname != arg.Gname {
@@ -209,6 +221,10 @@ func (c *Controller) startAutoProcs(arg CmdArg) error {
 	return nil
 }
 
+// startAllProcs tries to start all procRefs.
+// Although this function itself doesn't change any fields,
+// calling functions inside this function may chage it.
+// Thus, intended to be used in Controller.handleCmd function.
 func (c *Controller) startAllProcs() error {
 	for _, ps := range c.procs {
 		c.startProc(ps)
@@ -216,6 +232,10 @@ func (c *Controller) startAllProcs() error {
 	return nil
 }
 
+// startGroupProcs tries to start procRefs whose group name is gname.
+// Although this function itself doesn't change any fields,
+// calling functions inside this function may chage it.
+// Thus, intended to be used in Controller.handleCmd function.
 func (c *Controller) startGroupProcs(gname string) error {
 	procs := c.procs.filterByGroup(gname)
 	if len(procs) == 0 {
@@ -228,6 +248,10 @@ func (c *Controller) startGroupProcs(gname string) error {
 	return nil
 }
 
+// startProgProcs tries to start procRefs whose program name is pname.
+// Although this function itself doesn't change any fields,
+// calling functions inside this function may chage it.
+// Thus, intended to be used in Controller.handleCmd function.
 func (c *Controller) startProgProcs(gname, pname string) error {
 	procs := c.procs.filterByProg(gname, pname)
 	if len(procs) == 0 {
@@ -240,6 +264,10 @@ func (c *Controller) startProgProcs(gname, pname string) error {
 	return nil
 }
 
+// startIDProc tries to start the procRef whose id is id.
+// Although this function itself doesn't change any fields,
+// calling functions inside this function may chage it.
+// Thus, intended to be used in Controller.handleCmd function.
 func (c *Controller) startIDProc(gname, pname string, id uint8) error {
 	ps := c.procs.filterByID(gname, pname, id)
 	if ps == nil {
@@ -250,6 +278,9 @@ func (c *Controller) startIDProc(gname, pname string, id uint8) error {
 	return c.startProc(ps)
 }
 
+// startProc tries to start the ps.
+// It may change ps fields and it may effect Controller.procs.
+// Thus, intended to be used in Controller.handleCmd function.
 func (c *Controller) startProc(ps procRef) error {
 
 	// trying to start a process of unstartable procRef is normal behavior
@@ -338,7 +369,10 @@ func (c *Controller) startProc(ps procRef) error {
 	return nil
 }
 
-// stop proc
+// stopByCmd determines the scope of stopping procRefs from arg.
+// Although this function itself doesn't change any fields,
+// calling functions inside this function may change it.
+// Thus, intended to be used in Controller.handleCmd function.
 func (c *Controller) stopByCmd(arg CmdArg) error {
 	if isGeneralCmd(arg) {
 		return c.stopAllProcs()
@@ -353,6 +387,10 @@ func (c *Controller) stopByCmd(arg CmdArg) error {
 	return fmt.Errorf("can't find command args type")
 }
 
+// stopByCmd tries to stop all procRefs.
+// Although this function itself doesn't change any fields,
+// calling functions inside this function may change it.
+// Thus, intended to be used in Controller.handleCmd function.
 func (c *Controller) stopAllProcs() error {
 	for _, ps := range c.procs {
 		c.stopProc(ps)
@@ -360,6 +398,10 @@ func (c *Controller) stopAllProcs() error {
 	return nil
 }
 
+// stopGroupProcs tries to stop procRefs whose group name is gname.
+// Although this function itself doesn't change any fields,
+// calling functions inside this function may chage it.
+// Thus, intended to be used in Controller.handleCmd function.
 func (c *Controller) stopGroupProcs(gname string) error {
 	procs := c.procs.filterByGroup(gname)
 	for _, ps := range procs {
@@ -368,6 +410,10 @@ func (c *Controller) stopGroupProcs(gname string) error {
 	return nil
 }
 
+// stopProgProcs tries to stop procRefs whose program name is pname.
+// Although this function itself doesn't change any fields,
+// calling functions inside this function may change it.
+// Thus, intended to be used in Controller.handleCmd function.
 func (c *Controller) stopProgProcs(gname, pname string) error {
 	procs := c.procs.filterByProg(gname, pname)
 	for _, ps := range procs {
@@ -376,11 +422,19 @@ func (c *Controller) stopProgProcs(gname, pname string) error {
 	return nil
 }
 
+// stopProgProcs tries to stop procRef whose ID is id.
+// Although this function itself doesn't change any fields,
+// calling functions inside this function may change it.
+// Thus, intended to be used in Controller.handleCmd function.
 func (c *Controller) stopIDProc(gname, pname string, id uint8) error {
 	ps := c.procs.filterByID(gname, pname, id)
 	return c.stopProc(ps)
 }
 
+// startProc tries to stop the ps.
+// It only sends a signal to the process and doesn't check its result.
+// It may change ps fields and it may effect Controller.procs.
+// Thus, intended to be used in Controller.handleCmd function.
 func (c *Controller) stopProc(ps *Proc) error {
 
 	if !ps.Status.IsStoppable() {
@@ -414,6 +468,9 @@ func (c *Controller) stopProc(ps *Proc) error {
 	return nil
 }
 
+// loop waits and accepts the cmd sent by either sendCmd, notify, or reap.
+// this function may change Controller fields and should be called only
+// from Controller.Start.
 func (c *Controller) loop() {
 	defer c.cancel()
 
@@ -433,8 +490,9 @@ func (c *Controller) loop() {
 	}
 }
 
-// Possibly hanging if psch.resp is either not ready to receive,
-// its channel is full, or exiting without calling Unsubscribe.
+// handleCmd handles requested commands.
+// It blocks user command defined by IsUserCmd
+// when being shutdown.
 func (c *Controller) handleCmd(psch procCmd) {
 	if psch.cmd.IsUserCmd() && c.status.Load() == ctrlStopped {
 		psch.resp <- fmt.Errorf("the Controller is stopped.")
@@ -471,6 +529,10 @@ func (c *Controller) handleCmd(psch procCmd) {
 	}
 }
 
+// createProc adds procRefs from arg and cfg to Controller.procs.
+// Caller have to specify the scope of procRefs to be added.
+// It may change ps fields and it may effect Controller.procs.
+// Thus, intended to be used in Controller.handleCmd function.
 func (c *Controller) createProc(arg CmdArg, cfg Config) error {
 
 	for gname, group := range cfg.Cluster {
@@ -488,6 +550,10 @@ func (c *Controller) createProc(arg CmdArg, cfg Config) error {
 	return nil
 }
 
+// deleteProc deletes arg specified procRefs from Controller.procs.
+// Caller have to specify the scope of procRefs to be added.
+// It may change ps fields and it may effect Controller.procs.
+// Thus, intended to be used in Controller.handleCmd function.
 func (c *Controller) deleteProc(arg CmdArg) error {
 	procs := procRefs{}
 
@@ -504,6 +570,11 @@ func (c *Controller) deleteProc(arg CmdArg) error {
 	return nil
 }
 
+// handleExit handles OS process's exit.
+// It mainly call from reap and may changes
+// ps's status and start again.
+// It may change ps fields and it may effect Controller.procs.
+// Thus, intended to be used in Controller.handleCmd function.
 func (c *Controller) handleExit(exitState os.ProcessState) {
 	ps := c.procs.searchByPID(exitState.Pid())
 
@@ -515,13 +586,12 @@ func (c *Controller) handleExit(exitState os.ProcessState) {
 
 	switch {
 	case ps.Status == ProcStopping || exitState.ExitCode() == -1:
-		// correct behavior
 		slog.Info("process stopped", "group", ps.Gname, "program", ps.Pname, "id", ps.ID, "pid", ps.PID)
 		ps.Status = ProcStopped
 		ps.Time = time.Now()
 		ps.PID = 0
 	case ps.Status == ProcStarting:
-		// correct behavior, but process stopped unexpectedly
+		// The ps stopped too fast(before elapsing startsecs).
 		ps.Retry++
 		if ps.Retry < ps.Prog.Startretries {
 			slog.Info("process exited before startsecs; backing off", "group", ps.Gname, "program", ps.Pname, "id", ps.ID, "pid", ps.PID)
@@ -534,7 +604,7 @@ func (c *Controller) handleExit(exitState os.ProcessState) {
 		ps.PID = 0
 		ps.Retry = 0
 	case ps.Status == ProcRunning:
-		// correct behavior, but process might stop unexpectedly
+		// The ps stopped.
 		autorestart := ps.Prog.Autorestart
 		ps.Time = time.Now()
 		ps.PID = 0
@@ -566,17 +636,20 @@ func (c *Controller) handleExit(exitState os.ProcessState) {
 	}
 }
 
+// handleStartCheck checks the ps has correctly started.
+// It is mainly caused by notify and may change ps fields and it may effect Controller.procs.
+// Thus, intended to be used in Controller.handleCmd function.
 func (c *Controller) handleStartCheck(psch procCmd) {
 	ps := c.procs.searchByPID(psch.pid)
 
-	// It's possible when stopping process right after starting.
 	if ps == nil {
+		// ps might stop process right after starting.
 		slog.Debug("handleStartCheck: can't find process", "pid", psch.pid)
 		return
 	}
 
-	// If they already stopped the process, ignore procCmd
 	if time.Now().Sub(ps.Time) < ps.Prog.Startsecs {
+		// ps might stop process right after starting.
 		return
 	}
 
@@ -584,18 +657,18 @@ func (c *Controller) handleStartCheck(psch procCmd) {
 
 	switch ps.Status {
 	case ProcStarting:
-		// state should be running
+		// ps started correctly
 		slog.Info("process was starting cleanly", "group", ps.Gname, "program", ps.Pname, "id", ps.ID, "pid", ps.PID)
 		ps.Status = ProcRunning
 		return
 	case ProcBackoff:
-		// it have to start new process
+		// ps exited too fast
 		slog.Info("process was backed off", "group", ps.Gname, "program", ps.Pname, "id", ps.ID, "pid", ps.PID)
 		ps.Status = ProcStopped // set stopped status temporary to call startProc normally
 		c.startProc(ps)
 		return
 	case ProcStopping:
-		// it happens when stopping process right after starting
+		// stopped process right after starting and stopping hasn't finished yet.
 		slog.Debug("process might be stopped right after starting", "group", ps.Gname, "program", ps.Pname, "id", ps.ID, "pid", ps.PID)
 		return
 	case ProcStopped:
@@ -613,15 +686,18 @@ func (c *Controller) handleStartCheck(psch procCmd) {
 	}
 }
 
+// handleStartCheck checks the ps has correctly stopped.
+// It is mainly caused by notify and may change ps fields and it may effect Controller.procs.
+// Thus, intended to be used in Controller.handleCmd function.
 func (c *Controller) handleStopCheck(psch procCmd) {
 	ps := c.procs.searchByPID(psch.pid)
-	// it's natural to be nil when process is stopped normally
 	if ps == nil {
+		// ps stopped correctly
 		return
 	}
 
-	// It's unlikely happened, but in case when os create new process with exact same pid.
 	if time.Now().Sub(ps.Time) < ps.Prog.Stopwaitsecs {
+		// ps stopped correctly
 		return
 	}
 
@@ -682,7 +758,7 @@ func (c *Controller) handleProcFail(psch procCmd) {
 	}
 }
 
-// Writing log for child process's stdout/stderr.
+// stdLog writes log to file specified path for ps's stdout/stderr.
 func stdLog(path string, in *os.File) {
 	defer in.Close()
 
@@ -710,6 +786,7 @@ func stdLog(path string, in *os.File) {
 	}
 }
 
+// notify sends psch to Controller.loop after waiting wait.
 func notify(ctx context.Context, cmdCh chan<- procCmd, psch procCmd, wait time.Duration) {
 	select {
 	case <-time.After(wait):
@@ -722,7 +799,7 @@ func notify(ctx context.Context, cmdCh chan<- procCmd, psch procCmd, wait time.D
 	}
 }
 
-// Wait process is finished.
+// reap waits the process is finished.
 func reap(ctx context.Context, proc *os.Process, cmdCh chan<- procCmd) {
 	state, err := proc.Wait()
 	if err != nil {

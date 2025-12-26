@@ -19,7 +19,7 @@ type server struct {
 	path string
 }
 
-func NewServer(socket t.Socket, taskCmd *t.TaskCmd) (*server, error) {
+func newServer(socket t.Socket, taskCmd *t.TaskCmd) (*server, error) {
 	l, err := net.Listen("unix", socket.Path)
 	if err != nil {
 		slog.Error("rpc.NewServer:", "error", err.Error())
@@ -50,7 +50,7 @@ func NewServer(socket t.Socket, taskCmd *t.TaskCmd) (*server, error) {
 	}, nil
 }
 
-func (s *server) Serve() error {
+func (s *server) serve() error {
 
 	rpc.DefaultServer = rpc.NewServer()
 
@@ -64,7 +64,7 @@ func (s *server) Serve() error {
 	return s.s.Serve(s.l)
 }
 
-func (s *server) Shutdown() error {
+func (s *server) shutdown() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	defer s.l.Close()

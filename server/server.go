@@ -9,6 +9,15 @@ import (
 	t "github.com/massahito/taskmaster"
 )
 
+// Run is entry point of RPC server for taskmaster.
+//
+// This function will create an http/rpc server and
+// block until signal is sent.
+//
+// Yaml configuration path should be passed as an argument.
+//
+// To stop server gracefully, send SIGTERM/SIGINT for this process.
+// Sending SIGHUP will reload the server.
 func Run(path string) error {
 	// main signal handler
 	sigCh := make(chan os.Signal, 1)
@@ -41,19 +50,19 @@ func Run(path string) error {
 		tCmd := t.NewTaskCmd(cfg, ctrl)
 
 		// cerate rpc Server
-		server, err := NewServer(cfg.Socket, tCmd)
+		server, err := newServer(cfg.Socket, tCmd)
 		if err != nil {
 			return err
 		}
 
-		go server.Serve()
+		go server.serve()
 
 		select {
 		case sig := <-sigCh:
 			switch sig {
 			case syscall.SIGTERM, syscall.SIGINT:
 				// stopping receiving request and handle current request
-				err = server.Shutdown()
+				err = server.shutdown()
 				if err != nil {
 					slog.Error("server.Shutdown", "error", err.Error())
 				}
@@ -65,7 +74,7 @@ func Run(path string) error {
 				return nil
 			case syscall.SIGHUP:
 				// stopping receiving request and handle current request
-				err = server.Shutdown()
+				err = server.shutdown()
 				if err != nil {
 					slog.Error("server.Shutdown", "error", err.Error())
 				}
