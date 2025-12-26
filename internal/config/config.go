@@ -37,7 +37,7 @@ type YamlLog struct {
 }
 
 type YamlGroup struct {
-	Priority uint                   `yaml:"priority"`
+	Priority uint8                  `yaml:"priority"`
 	Programs map[string]YamlProgram `yaml:"programs"`
 }
 

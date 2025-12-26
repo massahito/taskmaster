@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"slices"
+	"sort"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -484,9 +485,10 @@ func (c *Controller) createProc(arg CmdArg, cfg Config) error {
 			if arg.Pname != "" && arg.Pname != pname {
 				continue
 			}
-			c.procs = append(c.procs, buildProcRef(gname, pname, prog)...)
+			c.procs = append(c.procs, buildProcRef(gname, pname, group.Priority, prog)...)
 		}
 	}
+	sort.Sort(c.procs)
 
 	return nil
 }
