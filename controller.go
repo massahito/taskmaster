@@ -252,6 +252,8 @@ func (c *Controller) startIDProc(gname, pname string, id uint8) error {
 
 func (c *Controller) startProc(ps procRef) error {
 
+	// trying to start a process of unstartable procRef is normal behavior
+	// expecially calling command with entire/group/program scope.
 	if !ps.Status.IsStartable() {
 		slog.Debug("startProc: process not startable", "group", ps.Gname, "program", ps.Pname, "id", ps.ID)
 		return fmt.Errorf("the process is not startable")
@@ -260,6 +262,10 @@ func (c *Controller) startProc(ps procRef) error {
 	rStdout, wStdout, err := os.Pipe()
 	if err != nil {
 		slog.Error("startProc: pipe error")
+		ps.Status = ProcFatal
+		ps.Time = time.Now()
+		ps.PID = 0
+		ps.Retry = 0
 		return err
 	}
 	defer wStdout.Close()
@@ -267,6 +273,10 @@ func (c *Controller) startProc(ps procRef) error {
 	rStderr, wStderr, err := os.Pipe()
 	if err != nil {
 		slog.Error("startProc: pipe error")
+		ps.Status = ProcFatal
+		ps.Time = time.Now()
+		ps.PID = 0
+		ps.Retry = 0
 		return err
 	}
 	defer wStderr.Close()
@@ -283,7 +293,6 @@ func (c *Controller) startProc(ps procRef) error {
 
 	ps.Time = time.Now()
 	proc, err := os.StartProcess(ps.Prog.Cmd[0], ps.Prog.Cmd, attr)
-
 	if err != nil {
 		defer rStdout.Close()
 		defer rStderr.Close()
@@ -426,8 +435,12 @@ func (c *Controller) loop() {
 
 // Possibly hanging if psch.resp is either not ready to receive,
 // its channel is full, or exiting without calling Unsubscribe.
-// TODO deny user request when shutdown
 func (c *Controller) handleCmd(psch procCmd) {
+	if psch.cmd.IsUserCmd() && c.status.Load() == ctrlStopped {
+		psch.resp <- fmt.Errorf("the Controller is stopped.")
+		return
+	}
+
 	switch psch.cmd {
 	case procAutoStart:
 		psch.resp <- c.startAutoProcs(psch.arg)
@@ -520,17 +533,19 @@ func (c *Controller) handleExit(exitState os.ProcessState) {
 	case ps.Status == ProcRunning:
 		// correct behavior, but process might stop unexpectedly
 		autorestart := ps.Prog.Autorestart
+		ps.Time = time.Now()
+		ps.PID = 0
+		ps.Retry = 0
 		switch {
 		case autorestart == RestartNever:
 			slog.Info("process exited", "group", ps.Gname, "program", ps.Pname, "id", ps.ID, "pid", ps.PID)
 			ps.Status = ProcExited
-			ps.Time = time.Now()
 		case autorestart == RestartUnexpected && slices.Contains(ps.Prog.Exitcodes, uint8(exitState.ExitCode())):
 			slog.Info("process exited", "group", ps.Gname, "program", ps.Pname, "id", ps.ID, "pid", ps.PID)
 			ps.Status = ProcExited
-			ps.Time = time.Now()
 		default:
 			slog.Info("process will be restarted", "group", ps.Gname, "program", ps.Pname, "id", ps.ID, "pid", ps.PID, "exit_code", exitState.ExitCode())
+			ps.Status = ProcStopped
 			c.startProc(ps)
 		}
 	case ps.Status == ProcStopped:

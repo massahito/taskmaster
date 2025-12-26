@@ -96,6 +96,15 @@ const (
 	procFail
 )
 
+func (c cmd) IsUserCmd() bool {
+	switch c {
+	default:
+		return false
+	case procAutoStart, procGetStatus, procStart, procStop, procShutDown, procCreate, procDelete:
+		return true
+	}
+}
+
 type procCmd struct {
 	pid   int
 	cmd   cmd
