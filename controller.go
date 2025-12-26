@@ -9,6 +9,7 @@ import (
 	"os"
 	"slices"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 )
@@ -33,7 +34,7 @@ type Controller struct {
 	procs  procRefs
 	cmdCh  chan procCmd
 	pubChs map[chan<- Procs]bool
-	status ctrlStatus
+	status atomic.Value
 	mutex  sync.Mutex
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -46,14 +47,16 @@ func NewController(cfg Config) *Controller {
 
 	slog.Debug("new Controller were created.")
 
-	return &Controller{
+	c := &Controller{
 		procs:  procs,
 		cmdCh:  make(chan procCmd, 100),
 		pubChs: map[chan<- Procs]bool{},
-		status: ctrlStopped,
 		ctx:    ctx,
 		cancel: cancel,
 	}
+	c.status.Store(ctrlStopped)
+
+	return c
 }
 
 // Start will start managing configurated processes.
@@ -62,6 +65,11 @@ func NewController(cfg Config) *Controller {
 //
 // [Controller.Shutdown] shouldn't be called before calling this function.
 func (c *Controller) Start() error {
+	if c.status.CompareAndSwap(ctrlRunning, ctrlRunning) {
+		slog.Error("Controller.Start: this Controller has already started")
+		return fmt.Errorf("Controller.Start: this Controller has already started")
+	}
+
 	go c.loop()
 
 	resp := make(chan error)
@@ -102,6 +110,11 @@ func (c *Controller) Unsubscribe(subCh chan<- Procs) {
 //
 // This function shouldn't be called before calling [Controller.Start].
 func (c *Controller) Shutdown() error {
+	if c.status.CompareAndSwap(ctrlStopped, ctrlStopped) {
+		slog.Error("Controller.Shutdown: this Controller has already stopped")
+		return fmt.Errorf("Controller.Shutdown: this Controller has already stopped")
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
@@ -239,6 +252,8 @@ func (c *Controller) startIDProc(gname, pname string, id uint8) error {
 
 func (c *Controller) startProc(ps procRef) error {
 
+	// trying to start a process of unstartable procRef is normal behavior
+	// expecially calling command with entire/group/program scope.
 	if !ps.Status.IsStartable() {
 		slog.Debug("startProc: process not startable", "group", ps.Gname, "program", ps.Pname, "id", ps.ID)
 		return fmt.Errorf("the process is not startable")
@@ -247,6 +262,10 @@ func (c *Controller) startProc(ps procRef) error {
 	rStdout, wStdout, err := os.Pipe()
 	if err != nil {
 		slog.Error("startProc: pipe error")
+		ps.Status = ProcFatal
+		ps.Time = time.Now()
+		ps.PID = 0
+		ps.Retry = 0
 		return err
 	}
 	defer wStdout.Close()
@@ -254,6 +273,10 @@ func (c *Controller) startProc(ps procRef) error {
 	rStderr, wStderr, err := os.Pipe()
 	if err != nil {
 		slog.Error("startProc: pipe error")
+		ps.Status = ProcFatal
+		ps.Time = time.Now()
+		ps.PID = 0
+		ps.Retry = 0
 		return err
 	}
 	defer wStderr.Close()
@@ -270,7 +293,6 @@ func (c *Controller) startProc(ps procRef) error {
 
 	ps.Time = time.Now()
 	proc, err := os.StartProcess(ps.Prog.Cmd[0], ps.Prog.Cmd, attr)
-
 	if err != nil {
 		defer rStdout.Close()
 		defer rStderr.Close()
@@ -395,10 +417,10 @@ func (c *Controller) stopProc(ps *Proc) error {
 func (c *Controller) loop() {
 	defer c.cancel()
 
-	c.status = ctrlRunning
+	c.status.Store(ctrlRunning)
 
 	for {
-		if c.status == ctrlStopped && c.procs.Procs().IsAllProcDead() {
+		if c.status.Load() == ctrlStopped && c.procs.Procs().IsAllProcDead() {
 			time.Sleep(time.Second * 1)
 			c.publish()
 			slog.Info("shutdown Controller complete")
@@ -413,8 +435,12 @@ func (c *Controller) loop() {
 
 // Possibly hanging if psch.resp is either not ready to receive,
 // its channel is full, or exiting without calling Unsubscribe.
-// TODO deny user request when shutdown
 func (c *Controller) handleCmd(psch procCmd) {
+	if psch.cmd.IsUserCmd() && c.status.Load() == ctrlStopped {
+		psch.resp <- fmt.Errorf("the Controller is stopped.")
+		return
+	}
+
 	switch psch.cmd {
 	case procAutoStart:
 		psch.resp <- c.startAutoProcs(psch.arg)
@@ -426,7 +452,7 @@ func (c *Controller) handleCmd(psch procCmd) {
 		psch.resp <- nil
 	case procShutDown:
 		slog.Info("receive shutdown command")
-		c.status = ctrlStopped
+		c.status.Store(ctrlStopped)
 		psch.resp <- c.stopAllProcs()
 	case procCreate:
 		psch.resp <- c.createProc(psch.arg, psch.cfg)
@@ -507,17 +533,19 @@ func (c *Controller) handleExit(exitState os.ProcessState) {
 	case ps.Status == ProcRunning:
 		// correct behavior, but process might stop unexpectedly
 		autorestart := ps.Prog.Autorestart
+		ps.Time = time.Now()
+		ps.PID = 0
+		ps.Retry = 0
 		switch {
 		case autorestart == RestartNever:
 			slog.Info("process exited", "group", ps.Gname, "program", ps.Pname, "id", ps.ID, "pid", ps.PID)
 			ps.Status = ProcExited
-			ps.Time = time.Now()
 		case autorestart == RestartUnexpected && slices.Contains(ps.Prog.Exitcodes, uint8(exitState.ExitCode())):
 			slog.Info("process exited", "group", ps.Gname, "program", ps.Pname, "id", ps.ID, "pid", ps.PID)
 			ps.Status = ProcExited
-			ps.Time = time.Now()
 		default:
 			slog.Info("process will be restarted", "group", ps.Gname, "program", ps.Pname, "id", ps.ID, "pid", ps.PID, "exit_code", exitState.ExitCode())
+			ps.Status = ProcStopped
 			c.startProc(ps)
 		}
 	case ps.Status == ProcStopped:
