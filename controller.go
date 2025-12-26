@@ -478,6 +478,9 @@ func (c *Controller) createProc(arg CmdArg, cfg Config) error {
 			continue
 		}
 		for pname, prog := range group.Progs {
+			if arg.Pname != "" && arg.Pname != pname {
+				continue
+			}
 			c.procs = append(c.procs, buildProcRef(gname, pname, prog)...)
 		}
 	}
@@ -653,21 +656,23 @@ func (c *Controller) handleStopCheck(psch procCmd) {
 
 }
 
+// handleProcFail restarts ps which failed right after starting.
 func (c *Controller) handleProcFail(psch procCmd) {
 	ps := c.procs.filterByID(psch.arg.Gname, psch.arg.Pname, uint8(psch.arg.ID))
 
 	if ps == nil {
-		panic("handleProcFail: can't find retry process")
+		// already stopped by user interaction.
+		return
 	}
 
-	// If they already stopped the process, ignore procCmd
 	if time.Now().Sub(ps.Time) < ps.Prog.Startsecs {
+		// already stopped by user interaction.
 		return
 	}
 
 	switch ps.Status {
 	case ProcBackoff:
-		// it have to start new process
+		// start new process
 		slog.Info("process was retried", "group", ps.Gname, "program", ps.Pname, "id", ps.ID)
 		ps.Status = ProcStopped // set stopped status temporary to call startProc normally
 		c.startProc(ps)
