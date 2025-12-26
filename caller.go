@@ -307,7 +307,7 @@ func (c *caller) autoStart(req *CmdArg, resp *Procs) error {
 				return err
 			}
 		case *resp = <-procsCh:
-			if (*resp).CheckStatus(ProcStarting|ProcRunning|ProcBackoff, *req) {
+			if (*resp).CheckStatus(ProcStarting|ProcRunning|ProcBackoff|ProcStopped, *req) {
 				return nil
 			}
 		case <-ctx.Done():
