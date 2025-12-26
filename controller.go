@@ -292,7 +292,10 @@ func (c *Controller) startProc(ps procRef) error {
 	}
 
 	ps.Time = time.Now()
+	old := syscall.Umask(ps.Prog.Umask)
 	proc, err := os.StartProcess(ps.Prog.Cmd[0], ps.Prog.Cmd, attr)
+	syscall.Umask(old)
+
 	if err != nil {
 		defer rStdout.Close()
 		defer rStderr.Close()
