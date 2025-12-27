@@ -12,6 +12,10 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+func PrintExamle() {
+	fmt.Fprint(os.Stdout, config.SampleConfig)
+}
+
 // Parse parses a configuration file from path and create [Config].
 //
 // the configuration file specified path should be formatted in yaml.
