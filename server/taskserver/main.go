@@ -12,9 +12,15 @@ import (
 )
 
 func main() {
-	var cFlag = flag.String("c", "./taskmaster.yaml", "specify configuration files. Default: ./taskmaster.yaml")
+	var pFlag = flag.Bool("p", false, "output samle configuration file to standard output")
+	var cFlag = flag.String("c", "./taskmaster.yaml", "specify configuration files.")
 	var nFlag = flag.Bool("n", false, "run taskserver in the foreground.")
 	flag.Parse()
+
+	if *pFlag {
+		t.PrintExamle()
+		return
+	}
 
 	// configuration check
 	cfg, err := t.Parse(*cFlag)
