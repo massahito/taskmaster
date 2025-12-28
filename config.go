@@ -12,6 +12,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// PrintExamle outputs an example of configuration file to stdout.
 func PrintExamle() {
 	fmt.Fprint(os.Stdout, config.SampleConfig)
 }
