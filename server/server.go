@@ -9,6 +9,15 @@ import (
 	t "github.com/massahito/taskmaster"
 )
 
+// Run executes RPC server for taskmaster.
+//
+// It take the configuration file path to its arguments,
+// and block until signal is sent to this process.
+//
+// To stop gracefully, send SIGTERM/SIGINT.
+//
+// To reload configuration and restart server itself,
+// send SIGHUP.
 func Run(path string) error {
 	// main signal handler
 	sigCh := make(chan os.Signal, 1)
