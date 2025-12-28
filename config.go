@@ -69,6 +69,15 @@ func parseConfig(path string, cfg config.YamlConfig) (Config, error) {
 }
 
 func parseSocket(skt config.YamlSocket) (Socket, error) {
+	if skt.Path == "" {
+		return Socket{
+			Path: "/tmp/taskmaster.sock",
+			Mode: 0660,
+			UID:  os.Getuid(),
+			GID:  os.Getgid(),
+		}, nil
+	}
+
 	return Socket{
 		Path: skt.Path,
 		Mode: skt.Mode,
@@ -78,13 +87,16 @@ func parseSocket(skt config.YamlSocket) (Socket, error) {
 }
 
 func parseLog(log config.YamlLog) (Log, error) {
+	if log.Path == "" {
+		return Log{
+			Path:  "/tmp/taskmaster.log",
+			Level: slog.LevelInfo,
+		}, nil
+	}
+
 	level, err := parseLogLevel(log.Level)
 	if err != nil {
 		return Log{}, err
-	}
-
-	if log.Path == "" {
-		log.Path = "/tmp/taskmaster.log"
 	}
 
 	return Log{

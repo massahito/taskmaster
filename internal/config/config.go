@@ -36,6 +36,20 @@ type YamlLog struct {
 	Level string `yaml:"level"`
 }
 
+func (l *YamlLog) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	type rawLog YamlLog
+	raw := rawLog{
+		Path:  "/tmp/taskmaster.log",
+		Level: "INFO",
+	}
+	if err := unmarshal(&raw); err != nil {
+		return err
+	}
+
+	*l = YamlLog(raw)
+	return nil
+}
+
 type YamlGroup struct {
 	Priority uint8                  `yaml:"priority"`
 	Programs map[string]YamlProgram `yaml:"programs"`
