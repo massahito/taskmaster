@@ -96,3 +96,79 @@ func (p *YamlProgram) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	*p = YamlProgram(raw)
 	return nil
 }
+
+const SampleConfig string = `
+# ------------------------------------------------------------------------------
+# Socket configuration
+# Configures the UNIX domain socket used by the taskserver
+# ------------------------------------------------------------------------------
+socket:
+  path: /tmp/taskmaster.sock        # Filesystem path of the socket file
+  mode: 660                         # Octal file mode applied to the socket
+  GID: 1000                         # Group ID owning the socket
+  UID: 1000                         # User ID owning the socket
+
+# ------------------------------------------------------------------------------
+# Cluster configuration
+# Defines process groups and their managed programs
+# Cluster must have at least one group in its mapping
+# Group must have at lease one program in its programs mapping
+# ------------------------------------------------------------------------------
+cluster:
+
+  sleepGroup:
+    priority: 1                     # Group scheduling priority.
+    programs:
+      sleepProgram1:
+        cmd: ["/bin/sleep", "30"]   # Command and arguments
+        numproc: 1                  # Number of process instances
+        priority: 255               # Program priority within the group
+        directory: /tmp             # Working directory
+        autostart: 'No'             # Start automatically on launch
+        autorestart: unexpected     # Restart only on unexpected exit
+        startsecs: 1                # Seconds process must stay running
+        startretries: 3             # Retry count on startup failure
+        stopwaitsecs: 10            # Grace period before forced stop
+        stopasgroup: 'No'           # Stop process group together
+        exitcodes:                  # Expected exit codes
+          - 0
+        stopsignal: TERM            # Signal used to stop the process
+        environment:                # Environment variables
+          - HOME: /root
+        umask: 022                  # File creation mask
+        stdout: /tmp/slpout(%d).log # Output file for standard output
+        stderr: /tmp/slperr(%d).log # Output file for standard error
+
+  logGroup:
+    priority: 120
+    programs:
+      tail:
+        cmd: ["/usr/bin/tail", "-f", "/tmp/taskmaster.log"]
+        numproc: 10
+        priority: 1
+        directory: /tmp
+        autostart: 'Yes'
+        autorestart: always
+        startsecs: 2
+        startretries: 5
+        stopwaitsecs: 15
+        stopasgroup: 'No'
+        exitcodes:
+          - 0
+        stopsignal: TERM
+        environment:
+          - SHELL: /bin/sh
+          - HOME: /root
+        umask: 022
+        stdout: /tmp/tailout(%d).log
+        stderr: /tmp/tailerr(%d).log
+
+# ------------------------------------------------------------------------------
+# Logging configuration
+# Controls taskserver's internal logging
+# ------------------------------------------------------------------------------
+log:
+  path: /tmp/taskmaster.log         # Log file location
+  level: INFO                       # Log verbosity level
+
+`

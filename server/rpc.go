@@ -19,23 +19,23 @@ type server struct {
 	path string
 }
 
-func NewServer(socket t.Socket, taskCmd *t.TaskCmd) (*server, error) {
+func newServer(socket t.Socket, taskCmd *t.TaskCmd) (*server, error) {
 	l, err := net.Listen("unix", socket.Path)
 	if err != nil {
-		slog.Error("rpc.NewServer:", "error", err.Error())
+		slog.Error("rpc.newServer:", "error", err.Error())
 		return nil, err
 	}
 
 	err = os.Chmod(socket.Path, socket.Mode)
 	if err != nil {
-		slog.Error("rpc.NewServer: os.Chmod", "error", err.Error())
+		slog.Error("rpc.newServer: os.Chmod", "error", err.Error())
 		l.Close()
 		return nil, err
 	}
 
 	err = os.Chown(socket.Path, socket.UID, socket.GID)
 	if err != nil {
-		slog.Error("rpc.NewServer: os.Chown", "error", err.Error())
+		slog.Error("rpc.newServer: os.Chown", "error", err.Error())
 		l.Close()
 		return nil, err
 	}
@@ -50,28 +50,28 @@ func NewServer(socket t.Socket, taskCmd *t.TaskCmd) (*server, error) {
 	}, nil
 }
 
-func (s *server) Serve() error {
+func (s *server) serve() error {
 
 	rpc.DefaultServer = rpc.NewServer()
 
 	rpc.HandleHTTP()
 	err := rpc.Register(s.t)
 	if err != nil {
-		slog.Error("rpc.Serve:", "error", err.Error())
+		slog.Error("rpc.serve:", "error", err.Error())
 		return err
 	}
 
 	return s.s.Serve(s.l)
 }
 
-func (s *server) Shutdown() error {
+func (s *server) shutdown() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	defer s.l.Close()
 
 	err := s.s.Shutdown(ctx)
 	if err != nil {
-		slog.Error("rpc.Shutdown:", "error", err.Error())
+		slog.Error("rpc.shutdown:", "error", err.Error())
 	}
 	return err
 }

@@ -41,21 +41,21 @@ func Run(path string) error {
 		tCmd := t.NewTaskCmd(cfg, ctrl)
 
 		// cerate rpc Server
-		server, err := NewServer(cfg.Socket, tCmd)
+		server, err := newServer(cfg.Socket, tCmd)
 		if err != nil {
 			return err
 		}
 
-		go server.Serve()
+		go server.serve()
 
 		select {
 		case sig := <-sigCh:
 			switch sig {
 			case syscall.SIGTERM, syscall.SIGINT:
 				// stopping receiving request and handle current request
-				err = server.Shutdown()
+				err = server.shutdown()
 				if err != nil {
-					slog.Error("server.Shutdown", "error", err.Error())
+					slog.Error("server.shutdown", "error", err.Error())
 				}
 				// cleanup controller: stop all processes and goroutines
 				err = ctrl.Shutdown()
@@ -65,9 +65,9 @@ func Run(path string) error {
 				return nil
 			case syscall.SIGHUP:
 				// stopping receiving request and handle current request
-				err = server.Shutdown()
+				err = server.shutdown()
 				if err != nil {
-					slog.Error("server.Shutdown", "error", err.Error())
+					slog.Error("server.shutdown", "error", err.Error())
 				}
 
 				// cleanup controller: stop all processes and goroutines
