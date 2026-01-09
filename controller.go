@@ -726,14 +726,14 @@ func stdLog(path string, in *os.File) {
 
 	reader := bufio.NewReader(in)
 	for {
-		str, err := reader.ReadString('\n')
+		r, _, err := reader.ReadRune()
 		if err != nil {
 			if err != io.EOF {
 				slog.Error("stdLog: got an error from Rearder.ReadString()", "error", err.Error())
 			}
 			return
 		}
-		_, err = out.WriteString(str)
+		_, err = out.WriteString(string(r))
 		if err != nil {
 			slog.Error("stdLog: got an error from *File.WriteString().", "error", err.Error())
 			return
