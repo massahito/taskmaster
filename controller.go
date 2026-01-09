@@ -331,10 +331,15 @@ func (c *Controller) startProc(ps procRef) error {
 	}
 
 	ps.PID = proc.Pid
-	ps.Status = ProcStarting
-	slog.Info("process starting", "group", ps.Gname, "program", ps.Pname, "id", ps.ID, "pid", ps.PID)
 
-	go notify(c.ctx, c.cmdCh, procCmd{cmd: procStartCheck, pid: proc.Pid}, ps.Prog.Startsecs)
+	if 0 < ps.Prog.Startsecs {
+		ps.Status = ProcStarting
+		slog.Info("process starting", "group", ps.Gname, "program", ps.Pname, "id", ps.ID, "pid", ps.PID)
+		go notify(c.ctx, c.cmdCh, procCmd{cmd: procStartCheck, pid: proc.Pid}, ps.Prog.Startsecs)
+	} else {
+		ps.Status = ProcRunning
+		slog.Info("process was starting cleanly", "group", ps.Gname, "program", ps.Pname, "id", ps.ID, "pid", ps.PID)
+	}
 
 	if ps.Prog.Stdout == "" {
 		defer rStdout.Close()
